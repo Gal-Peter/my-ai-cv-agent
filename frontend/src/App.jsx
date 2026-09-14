@@ -10,21 +10,58 @@ export default function App() {
     '# Your Full Name\n\n**Email:** email@example.com | **Phone:** +123456789\n\n## Professional Summary\nYour AI-optimized professional summary will render here live as the agent updates your document structure...'
   );
 
+  // Connects the drag-and-drop file upload to our FastAPI server
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setAgentStatus('Parsing File...');
+    setMessages(prev => [...prev, { role: 'agent', text: `Analyzing file: "${file.name}"...` }]);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      // Connect directly to our running python docker container on port 8000
+      const response = await fetch('http://localhost:8000/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to upload file');
+      }
+
+      const data = await response.json();
+      
+      setMessages(prev => [
+        ...prev, 
+        { role: 'agent', text: `Successfully extracted text structure! Character Count: ${data.character_count}. Found contents starting with: \n\n"${data.text_preview}..."` }
+      ]);
+      
+      // Seed our live preview pane with the text data
+      setCvMarkdown(`# Extracted: ${data.filename}\n\n${data.text_preview}`);
+      
+    } catch (error) {
+      setMessages(prev => [...prev, { role: 'agent', text: `❌ Upload Error: ${error.message}` }]);
+    } finally {
+      setAgentStatus('Idle');
+    }
+  };
+
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
     
-    // Add user message to log
     setMessages(prev => [...prev, { role: 'user', text: input }]);
     setInput('');
     
-    // Simulate agent processing state
     setAgentStatus('Thinking...');
     setTimeout(() => {
-      setAgentStatus('Updating CV Template...');
-      setMessages(prev => [...prev, { role: 'agent', text: 'I am analyzing your changes and rewriting sections to match high-value tracking keywords.' }]);
+      setMessages(prev => [...prev, { role: 'agent', text: 'I am tracking your changes to structure the text layers correctly.' }]);
       setAgentStatus('Idle');
-    }, 1500);
+    }, 1200);
   };
 
   return (
@@ -52,9 +89,9 @@ export default function App() {
             <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-white hover:bg-slate-50 transition-colors">
               <div className="flex flex-col items-center justify-center pt-5 pb-6">
                 <p className="mb-1 text-sm text-slate-600 font-semibold">Drop your current CV here</p>
-                <p className="text-xs text-slate-400">PDF, DOCX up to 5MB</p>
+                <p className="text-xs text-slate-400">PDF up to 5MB</p>
               </div>
-              <input type="file" className="hidden" accept=".pdf,.docx" />
+              <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
             </label>
           </div>
 
@@ -62,7 +99,7 @@ export default function App() {
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((msg, index) => (
               <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-800 rounded-tl-none'}`}>
+                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-800 rounded-tl-none'}`}>
                   {msg.text}
                 </div>
               </div>
@@ -87,7 +124,8 @@ export default function App() {
         </section>
 
         {/* Right Live Document Preview Pane */}
-        <section className="w-3/5 bg-slate-100 p-8 overflow-y-auto h-full flex justify-center">
+        {/* We add dir="auto" to allow the browser to dynamically choose RTL for Hebrew or LTR for English pages */}
+        <section className="w-3/5 bg-slate-100 p-8 overflow-y-auto h-full flex justify-center" dir="auto">
           <div className="w-full max-w-[8.5in] bg-white min-h-[11in] shadow-xl rounded-md border border-slate-200 p-12 transition-all">
             <pre className="whitespace-pre-wrap font-mono text-xs text-slate-700 bg-slate-50 p-4 border border-slate-200 rounded-md">
               {cvMarkdown}
