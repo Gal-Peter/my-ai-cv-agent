@@ -3,5 +3,8 @@ uvicorn==0.28.0
 pydantic==2.6.4
 pymupdf==1.24.0
 python-multipart==0.0.9
+python-dotenv==1.0.1
+langchain-core>=0.1.41,<0.2.0
+langchain-groq==0.1.1
 flake8==7.0.0
 pytest==8.1.1
