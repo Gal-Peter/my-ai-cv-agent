@@ -1,44 +1,45 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { uploadCvFile, sendAgentPrompt } from './api';
 
 export default function App() {
   const [messages, setMessages] = useState([
-    { role: 'agent', text: 'SYSTEM READY // AUTHORIZED ACCESS GRANTED\n\nHello Operator. Drop an existing CV block into the receptor matrix or type your target job directives below.' }
+    { role: 'agent', text: 'Welcome to your AI Resume Assistant. Drop your current PDF CV here or upload a file to begin analyzing skills and optimizing sections.' }
   ]);
   const [input, setInput] = useState('');
-  const [agentStatus, setAgentStatus] = useState('STANDBY');
+  const [agentStatus, setAgentStatus] = useState('Idle');
+  const [activeTemplate, setActiveTemplate] = useState('minimal');
+
   const [cvMarkdown, setCvMarkdown] = useState(
-    '========================================================================\n' +
-    '>> SYSTEM CORE MEMORY RESUME MATRIX PENDING UPLOAD...\n' +
-    '========================================================================\n\n' +
-    '# IDENTITY NAME\n' +
-    '------------------------------------------------------------------------\n' +
-    'CONTACT // email@example.com | +123456789\n\n' +
-    '## CORE DIRECTIVES\n' +
-    'Your AI-optimized career profiles and structured resume segments will compile inside this terminal layout grid live as the system processes text transformations...'
+    '# Your Full Name\n' +
+    'email@example.com | +123456789 | Location\n\n' +
+    '## Professional Summary\n' +
+    'Your AI-optimized career profiles, metrics, and structured resume segments will compile inside this workspace canvas live as the agent processes text transformations...'
   );
 
-  const handleDownloadPDF = () => {
-    setAgentStatus('COMPILING_PDF');
-    window.print();
-    setAgentStatus('STANDBY');
+   const handleDownloadPDF = () => {
+    // Triggers a native client browser background stream download completely bypassing print panes!
+    window.location.href = 'http://localhost:8000/api/download';
   };
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0]; // Restored safe array access pointer
+    // Access the single file from the array index map cleanly
+    const file = e.target.files[0];
     if (!file) return;
 
-    setAgentStatus('PARSING_STREAM');
-    setMessages(prev => [...prev, { role: 'agent', text: `>> LOADING BINARY DATA STREAM: "${file.name.toUpperCase()}"...` }]);
+    setAgentStatus('Parsing File...');
+    setMessages(prev => [...prev, { role: 'agent', text: `Uploading and extracting "${file.name}"...` }]);
 
     try {
       const data = await uploadCvFile(file);
-      setMessages(prev => [...prev, { role: 'agent', text: `>> PARSE COMPLETE // METRICS: ${data.character_count} CHARS EXTRACTED.` }]);
+      setMessages(prev => [...prev, { role: 'agent', text: `Parse complete! Extracted ${data.character_count} text characters.` }]);
+      
+      // Directly render the pristine, AI-structured Markdown payload from the server
       setCvMarkdown(data.full_parsed_text);
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'agent', text: `>> ERROR // BUFFER OVERFLOW: ${error.message.toUpperCase()}` }]);
+      setMessages(prev => [...prev, { role: 'agent', text: `❌ Upload Error: ${error.message}` }]);
     } finally {
-      setAgentStatus('STANDBY');
+      setAgentStatus('Idle');
     }
   };
 
@@ -47,85 +48,95 @@ export default function App() {
     if (!input.trim()) return;
     
     const userPrompt = input;
-    setMessages(prev => [...prev, { role: 'user', text: `guest@orchestrator:~$ ${userPrompt}` }]);
+    setMessages(prev => [...prev, { role: 'user', text: userPrompt }]);
     setInput('');
-    setAgentStatus('THINKING_LLM');
+    setAgentStatus('Optimizing...');
 
     try {
       const data = await sendAgentPrompt(userPrompt);
       if (data.status === 'success') {
         setCvMarkdown(data.agent_response);
-        setMessages(prev => [...prev, { role: 'agent', text: '>> INJECTING UPDATED PARAMETERS... MATRIX ALIGNMENT RE-OPTIMIZED.' }]);
+        setMessages(prev => [...prev, { role: 'agent', text: '✨ CV optimization logic applied! Review the newly generated structures in the right preview window.' }]);
       } else {
         setMessages(prev => [...prev, { role: 'agent', text: data.agent_response }]);
       }
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'agent', text: `>> EXCEPTION // TIMEOUT: ${error.message.toUpperCase()}` }]);
+      setMessages(prev => [...prev, { role: 'agent', text: `❌ Processing Error: ${error.message}` }]);
     } finally {
-      setAgentStatus('STANDBY');
+      setAgentStatus('Idle');
+    }
+  };
+
+  const getTemplateStyles = () => {
+    switch (activeTemplate) {
+      case 'classic':
+        return "bg-amber-50/20 text-stone-900 border-stone-200 font-serif p-16 text-sm";
+      case 'modern':
+        return "bg-white text-slate-900 border-slate-200 font-sans p-16 text-sm";
+      case 'minimal':
+      default:
+        return "bg-white text-zinc-800 border-zinc-200 font-sans p-16 text-xs tracking-normal leading-relaxed";
     }
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-950 font-mono text-emerald-400 select-none antialiased relative">
-      {/* Retro Scanlines Visual Layer Hook */}
-      <div className="absolute inset-0 pointer-events-none terminal-scanlines z-50 opacity-30"></div>
-
-      {/* Main Terminal Header Row Layout */}
-      <header className="bg-zinc-900 border-b border-emerald-900/60 px-6 py-3.5 flex items-center justify-between z-10 print:hidden">
-        <div className="flex items-center space-x-3.5">
-          <span className="text-xl animate-pulse text-emerald-500">⚡</span>
-          <h1 className="text-md font-bold tracking-widest text-emerald-400 uppercase">CV_AGENT_CORE // V4.0</h1>
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-50 text-slate-800 font-sans antialiased">
+      <header className="bg-white border-b border-slate-200/80 px-6 py-4 flex items-center justify-between z-10 shadow-xs print:hidden">
+        <div className="flex items-center space-x-3">
+          <div className="h-8 w-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-base shadow-sm">⚡</div>
+          <h1 className="text-lg font-bold tracking-tight text-slate-900">AI CV Agent Workspace</h1>
         </div>
-        <div className="flex items-center space-x-6 text-xs">
+        
+        <div className="flex items-center space-x-4 text-xs font-medium">
           <div className="flex items-center space-x-2">
-            <span className="text-zinc-500">STATE:</span>
-            <span className={`px-2 py-0.5 rounded border border-emerald-950 font-semibold tracking-wider ${agentStatus !== 'STANDBY' ? 'bg-emerald-950/80 text-emerald-300 animate-pulse border-emerald-500/50' : 'bg-zinc-950 text-emerald-500'}`}>[{agentStatus}]</span>
+            <span className="text-slate-400 font-normal">Template:</span>
+            <select value={activeTemplate} onChange={(e) => setActiveTemplate(e.target.value)} className="bg-slate-50 text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer text-xs font-semibold focus:border-blue-500 focus:bg-white transition-all">
+              <option value="minimal">Tech Corporate (Minimal)</option>
+              <option value="modern">Modern Creative (Clean)</option>
+              <option value="classic">Executive Serif (Classic)</option>
+            </select>
           </div>
-          <button onClick={handleDownloadPDF} className="flex items-center space-x-2 bg-zinc-950 border border-emerald-500/40 text-emerald-400 font-semibold text-xs tracking-wider px-3.5 py-1.5 rounded hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer">
-            <span>[EXE]</span><span>EXPORT_PDF</span>
+          <div className="flex items-center space-x-2 border-l border-slate-200 pl-4 h-6">
+            <span className="text-slate-400 font-normal">Status:</span>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-normal border ${agentStatus !== 'Idle' ? 'bg-blue-50 text-blue-700 border-blue-100 animate-pulse' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{agentStatus}</span>
+          </div>
+          <button onClick={handleDownloadPDF} className="flex items-center space-x-2 bg-slate-900 text-white font-semibold text-xs px-4 py-2 rounded-lg hover:bg-slate-800 active:scale-98 transition-all shadow-xs cursor-pointer">
+            <span>📥</span><span>Download PDF</span>
           </button>
         </div>
       </header>
 
-      {/* Main Screen Layout Container */}
       <main className="flex flex-1 overflow-hidden relative">
-        {/* Left Side Control Panel */}
-        <section className="w-2/5 border-r border-emerald-900/40 bg-zinc-950 flex flex-col justify-between h-full print:hidden">
-          <div className="p-4 border-b border-emerald-900/30 bg-zinc-900/30">
-            <label className="flex flex-col items-center justify-center w-full h-24 border border-emerald-900/60 border-dashed rounded bg-zinc-950 hover:bg-emerald-950/10 hover:border-emerald-500/60 transition-all cursor-pointer group">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center">
-                <p className="text-xs text-emerald-500/80 group-hover:text-emerald-400 font-semibold uppercase tracking-wider mb-1">[ MOUNT BINARY DATA RECEPTOR ]</p>
-                <p className="text-[10px] text-emerald-700 uppercase tracking-tight">Accepts: target_cv.pdf (Max 5MB)</p>
+        <section className="w-2/5 border-r border-slate-200/80 bg-white flex flex-col justify-between h-full print:hidden">
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+            <label className="flex flex-col items-center justify-center w-full h-24 border border-slate-300 border-dashed rounded-xl bg-white hover:bg-slate-50 hover:border-slate-400 transition-all cursor-pointer group">
+              <div className="flex flex-col items-center justify-center text-center px-4">
+                <p className="text-xs text-slate-700 font-semibold mb-0.5 group-hover:text-blue-600 transition-colors">Upload your current PDF resume</p>
+                <p className="text-[11px] text-slate-400">PDF documents up to 5MB are automatically parsed</p>
               </div>
               <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
             </label>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-white">
             {messages.map((msg, index) => (
               <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[90%] rounded p-3 text-xs leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-800/40' : 'text-emerald-400/90'}`}>{msg.text}</div>
+                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none shadow-xs' : 'bg-slate-100 text-slate-700 rounded-tl-none border border-slate-200/40'}`}>{msg.text}</div>
               </div>
             ))}
           </div>
 
-          <form onSubmit={handleSendMessage} className="p-4 border-t border-emerald-900/30 bg-zinc-900/20">
-            <div className="flex items-center space-x-3 bg-zinc-950 border border-emerald-900/60 rounded px-3 py-1 transition-all focus-within:border-emerald-500/80">
-              <span className="text-emerald-500 font-bold text-sm animate-pulse">&gt;</span>
-              <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="EXECUTE SYSTEM REWRITE DIRECTIVE..." className="flex-1 bg-transparent text-emerald-400 text-xs py-2.5 outline-none placeholder-emerald-800 uppercase" />
-              <button type="submit" className="text-emerald-500 hover:text-emerald-300 font-bold text-xs uppercase px-3 py-1 bg-zinc-900 border border-emerald-900 rounded hover:bg-emerald-950 transition-colors cursor-pointer">RUN</button>
+          <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-200/80 bg-white">
+            <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1 shadow-inner-xs focus-within:border-slate-400 focus-within:bg-white transition-all">
+              <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask agent to refine layouts, inject keywords, or target a specific role..." className="flex-1 bg-transparent text-slate-800 text-xs py-3 outline-none placeholder-slate-400 font-medium" />
+              <button type="submit" className="text-white font-semibold text-xs px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors cursor-pointer">Send</button>
             </div>
           </form>
         </section>
 
-        {/* Right Side Live Document Canvas */}
-        <section className="w-3/5 bg-zinc-900/40 p-8 overflow-y-auto h-full flex justify-center print:w-full print:p-0">
-          <div 
-            id="resume-print-target" 
-            className="w-full max-w-[8.5in] bg-zinc-950 min-h-[11in] border border-emerald-900/40 rounded p-12 text-left [unicode-bidi:plaintext] whitespace-pre-wrap break-words overflow-x-hidden font-mono text-xs text-emerald-400/90 leading-relaxed tracking-wide selection:bg-emerald-500 selection:text-black print:border-none print:p-0"
-          >
-            {cvMarkdown}
+        <section className="w-3/5 bg-slate-50 p-8 overflow-y-auto h-full flex justify-center scrollbar-thin print:w-full print:p-0 print:bg-white">
+          <div id="resume-print-target" className={`w-full max-w-[8.5in] min-h-[11in] border shadow-xs rounded-xl text-left [unicode-bidi:plaintext] break-words overflow-x-hidden tracking-normal leading-relaxed selection:bg-blue-100 selection:text-slate-900 print:border-none print:shadow-none print:rounded-none print:p-0 ${getTemplateStyles()}`}>
+            <ReactMarkdown>{cvMarkdown}</ReactMarkdown>
           </div>
         </section>
       </main>

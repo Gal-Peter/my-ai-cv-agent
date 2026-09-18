@@ -1,61 +1,65 @@
 @import "tailwindcss";
 
-/* ------------------------------------------------------------------------
-   RETRO CYBERPUNK SCANLINE ANIMATIONS FOR INTERFACES
-   ------------------------------------------------------------------------ */
 body {
   margin: 0;
-  background-color: #09090b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background-color: #f8fafc;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-@keyframes pulse-slow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-
-.animate-pulse-slow {
-  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-
-.terminal-scanlines {
-  background: linear-gradient(
-    rgba(18, 16, 16, 0) 50%, 
-    rgba(0, 0, 0, 0.25) 50%
-  ), linear-gradient(
-    90deg,
-    rgba(255, 0, 0, 0.06),
-    rgba(0, 255, 0, 0.02),
-    rgba(0, 0, 255, 0.06)
-  );
-  background-size: 100% 4px, 3px 100%;
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
 }
-
-@import "tailwindcss";
-
-body {
-  margin: 0;
-  background-color: #09090b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-}
-
-@keyframes pulse-slow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.animate-pulse-slow {
-  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-.terminal-scanlines {
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-  background-size: 100% 4px, 3px 100%;
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 /* ------------------------------------------------------------------------
-   NATIVE PRINT OVERRIDE: Hides the dashboard and prints only the resume canvas
+   MARKDOWN RESUME STRUCTURAL BULLET STYLE INJECTIONS
+   Forces HTML list items to indent and display clean visual bullet points
    ------------------------------------------------------------------------ */
+#resume-print-target ul {
+  list-style-type: disc !important;
+  margin-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+#resume-print-target li {
+  display: list-item !important;
+  margin-bottom: 0.35rem !important;
+  padding-left: 0.25rem !important;
+}
+
+#resume-print-target h1 {
+  font-size: 1.75rem !important;
+  font-weight: 700 !important;
+  margin-bottom: 0.5rem !important;
+}
+
+#resume-print-target h2 {
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+  margin-top: 1.25rem !important;
+  margin-bottom: 0.75rem !important;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.25rem;
+}
+
+@page {
+  size: auto;
+  margin: 0mm;
+}
+
 @media print {
   body * {
     visibility: hidden;
@@ -68,8 +72,11 @@ body {
     left: 0;
     top: 0;
     width: 100%;
-    background-color: #09090b !important;
-    color: #34d399 !important;
-    padding: 2rem !important;
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    padding: 20mm !important;
+    box-shadow: none !important;
+    border: none !important;
   }
 }

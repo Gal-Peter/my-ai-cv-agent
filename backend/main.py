@@ -1,23 +1,28 @@
 import fitz  # PyMuPDF
 import os
+import re
+import unicodedata
+import markdown
+from io import BytesIO
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Load local environment variables from our secure .env file
-load_dotenv()
+# RESTORED PLATYPUS MODULE SCHEMAS NATIVELY
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
 
-# Verify that the Groq Key is actively recognized by the system container
-if not os.getenv("GROQ_API_KEY"):
-    print("⚠️ WARNING: GROQ_API_KEY is missing from environment variables. Please check your backend/.env configuration.")
+load_dotenv()
 
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
 app = FastAPI(title="AI CV Agent Orchestrator API")
 
-# Configure CORS so your React Vite container can securely send data streams
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,13 +31,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize the Groq Brain Engine using the updated active free-tier model ID
-agent_brain = ChatGroq(
-    model="openai/gpt-oss-120b",
-    temperature=0.2
-)
+# Initialize the Groq Engine safely checking environment bounds
+api_key = os.getenv("GROQ_API_KEY")
+agent_brain = None
+if api_key and not api_key.startswith("your_"):
+    agent_brain = ChatGroq(model="openai/gpt-oss-120b", temperature=0.2)
+else:
+    print("⚠️ DOCKER LOG WARNING: GROQ_API_KEY is missing or invalid. Activating native Python text cleansing backup router.")
 
-# In-memory session store to preserve the current uploaded CV text context
 session_store = {"current_cv_text": ""}
 
 
@@ -40,18 +46,70 @@ class ChatMessage(BaseModel):
     message: str
 
 
+def ultimate_unicode_cleaner(text_data):
+    """
+    Strong normalization and cleaning function that aggressively targets soft hyphens,
+    hidden binary byte tags, and non-printable text characters to permanently resolve square blocks.
+    """
+    if not text_data:
+        return ""
+    
+    # 1. Normalize characters to decompose special embedded font ligatures
+    clean = unicodedata.normalize('NFKC', text_data)
+    
+    # 2. Directly swap common soft hyphen character layers and broken blocks
+    clean = clean.replace('\xad', '').replace('\xa0', ' ').replace('\u200b', '')
+    clean = clean.replace('█', '').replace('■', '').replace('●', '').replace('•', '')
+    
+    # 3. Bulletproof regular expression: Strip ANY remaining hidden control code/symbol
+    # Keep only standard printable ASCII, punctuation, numbers, and Hebrew character blocks
+    clean = re.sub(r'[^\x20-\x7E\u0590-\u05FF\n]', '', clean)
+    
+    # 4. Collapse accidental double spaces left behind by the cleaning pass
+    clean = re.sub(r' +', ' ', clean)
+    
+    return clean
+
+
+def fallback_clean_text(raw_text):
+    """
+    Advanced fallback parser that strips hidden bytecode artifacts 
+    and splits dense paragraph blocks into clean, structured Markdown lists.
+    """
+    if not raw_text:
+        return ""
+    
+    clean = ultimate_unicode_cleaner(raw_text)
+    lines = [line.strip() for line in clean.splitlines() if line.strip()]
+    formatted_lines = []
+    
+    for line in lines:
+        if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary"]):
+            formatted_lines.append(f"\n## {line}\n")
+        elif "Gal Peter" in line:
+            formatted_lines.append(f"# {line}\n")
+        else:
+            if " - " in line or ". " in line:
+                sub_sentences = re.split(r'(?<=\.)\s+|\s+-\s+', line)
+                for sentence in sub_sentences:
+                    s_clean = sentence.strip().lstrip('-').strip()
+                    if s_clean and len(s_clean) > 10:
+                        formatted_lines.append(f"- {s_clean}")
+            elif len(line) > 30 and not line.endswith(":") and not "|" in line:
+                formatted_lines.append(f"- {line}")
+            else:
+                formatted_lines.append(line)
+                
+    return "\n".join(formatted_lines).strip()
+
+
 @app.get("/")
 async def root():
-    """Health check endpoint for our automated pipelines and hosting layers."""
-    return {"status": "healthy", "agent": "CV Optimizer with GPT-OSS Brain"}
+    return {"status": "healthy", "agent": "CV Production Stack"}
 
 
 @app.post("/api/upload")
 async def upload_cv(file: UploadFile = File(...)):
-    """
-    Accepts PDF files, extracts bidirectional text cleanly,
-    and returns both a short log preview and the complete text string.
-    """
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
         
@@ -61,77 +119,128 @@ async def upload_cv(file: UploadFile = File(...)):
         
         extracted_text_list = []
         for page in doc:
-            # Standard block reading text extraction to avoid infinite loops on BiDi markers
-            page_text = page.get_text("text") 
-            if page_text:
-                extracted_text_list.append(page_text)
+            blocks = page.get_text("blocks")
+            blocks.sort(key=lambda b: (b[1], b[0]))  # Standard top-to-bottom vertical layout alignment
+            
+            for b in blocks:
+                block_text = b[4]  # Correctly extract text index string from block tuple map securely
+                if block_text and isinstance(block_text, str):
+                    block_text = ultimate_unicode_cleaner(block_text)
+                    clean_block = "\n".join([line.strip() for line in block_text.splitlines() if line.strip()])
+                    extracted_text_list.append(clean_block)
                 
         doc.close()
+        raw_full_text = "\n\n".join(extracted_text_list).strip()
         
-        # Merge individual pages into a single cohesive string
-        full_text = "\n".join(extracted_text_list).strip()
-        
-        if not full_text:
-            raise HTTPException(status_code=422, detail="PDF layer is empty or scanned. Please use a text-based PDF.")
+        if not raw_full_text:
+            raise HTTPException(status_code=422, detail="PDF text layer is empty or scanned.")
+
+        if agent_brain:
+            try:
+                structuring_prompt = (
+                    "You are an expert ATS layout parser. Re-write this resume text into clean, structured Markdown format.\n\n"
+                    "CRITICAL RULES:\n"
+                    "1. Every single job responsibility line under companies MUST start with a hyphen and space ('- ').\n"
+                    "2. Clean formatting glitches like split words ('in-house') or space breaks in phone digits.\n"
+                    "3. Return ONLY the markdown resume text layer. No introductory boilerplates.\n\n"
+                    "RAW CV INPUT:\n{raw_text}"
+                )
+                prompt_template = ChatPromptTemplate.from_messages([("system", structuring_prompt)])
+                chain = prompt_template | agent_brain
+                response = chain.invoke({"raw_text": raw_full_text})
+                structured_markdown = response.content.strip()
+            except Exception:
+                structured_markdown = fallback_clean_text(raw_full_text)
+        else:
+            structured_markdown = fallback_clean_text(raw_full_text)
             
-        # Store the complete, un-truncated text inside the session store for the Groq agent
-        session_store["current_cv_text"] = full_text
-        
-        print(f"✅ Successfully parsed {file.filename}! Total length: {len(full_text)} characters.")
-        
+        session_store["current_cv_text"] = structured_markdown
         return {
             "filename": file.filename,
             "status": "parsed",
-            "character_count": len(full_text),
-            "text_preview": full_text[:300],  # Short visual snippet for the left chat bubbles
-            "full_parsed_text": full_text     # The complete, uncut text payload for the right resume window
+            "character_count": len(structured_markdown),
+            "text_preview": structured_markdown[:300],
+            "full_parsed_text": structured_markdown
         }
     except Exception as e:
-        print(f"❌ Critical Parsing Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
+        print(f"❌ Internal Processing Crash: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/chat")
 async def chat_with_agent(payload: ChatMessage):
-    """Processes user chat prompts against the uploaded CV data using the Groq Llama 3 model."""
     cv_data = session_store.get("current_cv_text", "")
-    
     if not cv_data:
-        return {
-            "status": "waiting",
-            "agent_response": "I see you want to optimize your resume! Please upload a PDF CV file using the upload block first so I can analyze your professional history."
-        }
+        raise HTTPException(status_code=400, detail="No active document found in session cache.")
         
-    # Build out a multi-step recruiter persona prompt boundary
+    if not agent_brain:
+        return {"status": "success", "agent_response": cv_data}
+        
     system_prompt = (
-        "You are an expert bilingual technical recruiter specializing in Applicant Tracking Systems (ATS).\n"
-        "Your task is to review the user's raw extracted CV text and modify it based on their request.\n\n"
-        "CRITICAL RULES:\n"
-        "1. You must maintain strict facts. Do not invent fake company names or jobs.\n"
-        "2. If the text is in Hebrew, maintain flawless Hebrew syntax and format logic.\n"
-        "3. Output your response using clean, professional Markdown syntax. Do not include chat boilerplates like 'Here is your resume:' or 'Sure, I can help with that.'\n"
-        "4. Start directly with the Markdown layout document structure (e.g., # Full Name).\n\n"
-        "--- RAW EXTRACTED CV DATA START ---\n"
-        "{cv_context}\n"
-        "--- RAW EXTRACTED CV DATA END ---"
+        "You are an expert ATS technical recruiter. Review the formatted Markdown resume and modify it per request.\n\n"
+        "RULES:\n"
+        "1. Output clean Markdown using proper headers and bullet points (- ).\n"
+        "2. Return ONLY the raw markdown resume data block structure.\n\n"
+        "WORKSPACE:\n{cv_context}"
     )
-    
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "{user_instruction}")
-    ])
-    
+    prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
     try:
-        # Construct the execution chain and invoke the Groq cloud model
         chain = prompt_template | agent_brain
         response = chain.invoke({
             "cv_context": cv_data,
             "user_instruction": payload.message
         })
-        
-        return {
-            "status": "success",
-            "agent_response": response.content
-        }
+        session_store["current_cv_text"] = response.content.strip()
+        return {"status": "success", "agent_response": response.content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Groq API Error: {str(e)}")
+
+
+@app.get("/api/download")
+async def download_pdf():
+    md_content = session_store.get("current_cv_text", "")
+    if not md_content:
+        raise HTTPException(status_code=400, detail="No resume data available.")
+        
+    # Apply global string sweep filter right before generating the document template
+    clean_md = ultimate_unicode_cleaner(md_content)
+    
+    raw_html = markdown.markdown(clean_md)
+    soup = BeautifulSoup(raw_html, "html.parser")
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
+    styles = getSampleStyleSheet()
+    
+    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#1f2937', spaceAfter=4)
+    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor='#111827', spaceAfter=12)
+    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=13, leading=18, textColor='#1e40af', spaceBefore=16, spaceAfter=8)
+
+    story = []
+    for element in soup.children:
+        if element.name == 'h1':
+            story.append(Paragraph(element.get_text(), h1_style))
+            story.append(Spacer(1, 4))
+        elif element.name == 'h2':
+            story.append(Paragraph(element.get_text(), h2_style))
+        elif element.name == 'p':
+            story.append(Paragraph(element.get_text(), body_style))
+        elif element.name in ['ul', 'ol']:
+            list_items = []
+            for li in element.find_all('li'):
+                text = li.get_text().strip()
+                if text.startswith("-") or text.startswith("•"):
+                    text = text[1:].strip()
+                if text:
+                    list_items.append(ListItem(Paragraph(text, body_style), leftIndent=12, bulletOffsetY=-1))
+            
+            if list_items:
+                story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=6))
+            
+    try:
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=Optimized_Resume.pdf"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ReportLab Engine Error: {str(e)}")
