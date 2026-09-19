@@ -1,7 +1,7 @@
 /**
  * Dedicated E2E Communication Hub for the AI CV Agent Production API
  */
-// FIXED: Swapped out localhost for authenticated live GCP backend link wrapper
+// UPDATED TARGET: Point to your clean, synchronized production project URL mapping
 const API_BASE = 'https://run.app';
 
 export async function uploadCvFile(file) {
