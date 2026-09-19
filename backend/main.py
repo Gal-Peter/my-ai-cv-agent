@@ -23,14 +23,11 @@ from langchain_core.prompts import ChatPromptTemplate
 
 app = FastAPI(title="AI CV Agent Orchestrator API")
 
-# Configure CORS to explicitly trust your live Google Cloud production origins
+# PRODUCTION CORS OVERRIDE: Allow absolute public access for serverless requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://run.app",
-        "http://localhost:5173"  # Preserves local dev sandbox testing channels
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],  # Allows any web browser origin to securely talk to your API
+    allow_credentials=False,  # Required by FastAPI when using origin wildcards
     allow_methods=["*"],
     allow_headers=["*"],
 )
