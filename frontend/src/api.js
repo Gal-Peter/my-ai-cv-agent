@@ -1,7 +1,8 @@
 /**
- * Dedicated E2E Communication Hub for the AI CV Agent API
+ * Dedicated E2E Communication Hub for the AI CV Agent Production API
  */
-const API_BASE = 'http://localhost:8000/api';
+// FIXED: Swapped out localhost for authenticated live GCP backend link wrapper
+const API_BASE = 'https://run.app';
 
 export async function uploadCvFile(file) {
   const formData = new FormData();
