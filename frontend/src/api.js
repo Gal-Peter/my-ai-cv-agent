@@ -1,8 +1,8 @@
 /**
  * Dedicated E2E Communication Hub for the AI CV Agent Production API
  */
-// FIXED: Using the exact, verified live GCP serverless URL from your backend logs
-const API_BASE = 'https://cv-frontend-1090848858534.us-central1.run.app/';
+// FIXED: Target the root production URL directly so Google's proxies map resource states cleanly
+const API_BASE = 'https://run.app';
 
 export async function uploadCvFile(file) {
   const formData = new FormData();
