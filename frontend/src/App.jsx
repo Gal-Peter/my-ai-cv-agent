@@ -23,8 +23,7 @@ export default function App() {
   };
 
   const handleFileUpload = async (e) => {
-    // Access the single file from the array index map cleanly
-    const file = e.target.files[0];
+    const file = e.target.files;
     if (!file) return;
 
     setAgentStatus('Parsing File...');
@@ -32,6 +31,8 @@ export default function App() {
 
     try {
       const data = await uploadCvFile(file);
+      
+      // FIXED: Point to the exact data property key 'full_parsed_text' returned by your Python server
       setMessages(prev => [...prev, { role: 'agent', text: `Parse complete! Extracted ${data.character_count} text characters.` }]);
       
       // Directly render the pristine, AI-structured Markdown payload from the server
@@ -42,6 +43,7 @@ export default function App() {
       setAgentStatus('Idle');
     }
   };
+
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
