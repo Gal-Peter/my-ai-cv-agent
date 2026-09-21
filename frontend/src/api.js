@@ -7,7 +7,7 @@ const API_BASE = 'https://cv-backend-brm46w76uq-uc.a.run.app';
 export async function uploadCvFile(fileCollection) {
   const formData = new FormData();
   
-  # FIXED: Safely extract the raw single file blob element out of the selected index map array
+  # FIXED: Safely extract the raw single file blob element out the selected index map array
   const targetFile = fileCollection[0] || fileCollection;
   formData.append('file', targetFile);
 
