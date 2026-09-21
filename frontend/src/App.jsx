@@ -23,19 +23,22 @@ export default function App() {
   };
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files;
-    if (!file) return;
+    // FIXED: Access index 0 directly to ensure we extract the true raw file blob object instead of the array shell
+    const targetFile = e.target.files[0];
+    if (!targetFile) return;
 
     setAgentStatus('Parsing File...');
-    setMessages(prev => [...prev, { role: 'agent', text: `Uploading and extracting "${file.name}"...` }]);
+    // FIXED: Reads the native targetFile.name property perfectly now
+    setMessages(prev => [...prev, { role: 'agent', text: `Uploading and extracting "${targetFile.name}"...` }]);
 
     try {
-      const data = await uploadCvFile(file);
+      // Pass the single binary file element straight into your api module endpoint
+      const data = await uploadCvFile(targetFile);
       
-      // FIXED: Point to the exact data property key 'full_parsed_text' returned by your Python server
+      // Point to the exact data property key 'character_count' returned by your Python server
       setMessages(prev => [...prev, { role: 'agent', text: `Parse complete! Extracted ${data.character_count} text characters.` }]);
       
-      // Directly render the pristine, AI-structured Markdown payload from the server
+      // Directly render the pristine, AI-structured Markdown payload from the server onto the canvas
       setCvMarkdown(data.full_parsed_text);
     } catch (error) {
       setMessages(prev => [...prev, { role: 'agent', text: `❌ Upload Error: ${error.message}` }]);
