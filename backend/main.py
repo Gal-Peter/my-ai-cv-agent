@@ -89,28 +89,57 @@ async def root():
     return {"status": "healthy", "agent": "CV Production Stack"}
 
 
-# FIXED: Standardized direct base path strings without trailing slashes
 @app.post("/upload")
 async def upload_cv(file: UploadFile = File(...)):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+        
     try:
+        # Read the raw incoming binary stream completely
         file_bytes = await file.read()
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        
+        from io import BytesIO
+        import pdfplumber  # Import the advanced data extraction fallback engine
+        
         extracted_text_list = []
+        
+        # --- ENGINE 1: PyMuPDF Block Parsing ---
+        pdf_stream = BytesIO(file_bytes)
+        doc = fitz.open(stream=pdf_stream, filetype="pdf")
         for page in doc:
             blocks = page.get_text("blocks")
-            blocks.sort(key=lambda b: (b, b))
-            for b in blocks:
-                block_text = b
-                if block_text and isinstance(block_text, str):
-                    block_text = ultimate_unicode_cleaner(block_text)
-                    clean_block = "\n".join([line.strip() for line in block_text.splitlines() if line.strip()])
-                    extracted_text_list.append(clean_block)
+            if blocks:
+                blocks.sort(key=lambda b: (b[1], b[0]))
+                for b in blocks:
+                    block_text = b[4].strip() if len(b) > 4 else ""
+                    if block_text:
+                        extracted_text_list.append(block_text)
         doc.close()
+        
         raw_full_text = "\n\n".join(extracted_text_list).strip()
-        if not raw_full_text:
-            raise HTTPException(status_code=422, detail="PDF text layer is empty or scanned.")
+        
+        # --- ENGINE 2: Fallback to pdfplumber if text evaluates to 0 ---
+        if not raw_full_text or len(raw_full_text) < 50:
+            print("⚠️ PyMuPDF returned 0 characters. Activating pdfplumber deep extraction fallback...")
+            extracted_text_list = []
+            
+            # Reset stream pointer position
+            pdf_stream.seek(0)
+            with pdfplumber.open(pdf_stream) as plumber_doc:
+                for page in plumber_doc.pages:
+                    # Extract text using structural layout settings
+                    page_text = page.extract_text(layout=False)
+                    if page_text:
+                        extracted_text_list.append(page_text)
+            
+            raw_full_text = "\n\n".join(extracted_text_list).strip()
+
+        # Final Clean Pass
+        raw_full_text = ultimate_unicode_cleaner(raw_full_text)
+        print(f"📦 DEBUG: Successfully extracted {len(raw_full_text)} characters from the document layout.")
+        
+        if not raw_full_text or len(raw_full_text) < 10:
+            raise HTTPException(status_code=422, detail="PDF layer is empty or unextractable. Try exporting your file as a standard text-based PDF.")
 
         if agent_brain:
             try:
@@ -140,7 +169,8 @@ async def upload_cv(file: UploadFile = File(...)):
             "full_parsed_text": structured_markdown
         }
     except Exception as e:
-        return HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Internal Processing Crash inside upload pipeline: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/upload/")
