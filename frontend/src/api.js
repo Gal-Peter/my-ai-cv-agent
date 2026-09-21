@@ -1,14 +1,16 @@
 /**
  * Dedicated E2E Communication Hub for the AI CV Agent Production API
  */
-// FIXED: Using the exact, verified live GCP serverless URL from your backend metrics!
+// Verified Live GCP Backend Domain Target (No trailing slash here)
 const API_BASE = 'https://cv-backend-brm46w76uq-uc.a.run.app';
 
-export async function uploadCvFile(file) {
+export async function uploadCvFile(fileCollection) {
   const formData = new FormData();
-  formData.append('file', file);
+  
+  # FIXED: Safely extract the raw single file blob element out of the selected index map array
+  const targetFile = fileCollection[0] || fileCollection;
+  formData.append('file', targetFile);
 
-  // Directly targets your clean root backend container path rule
   const response = await fetch(`${API_BASE}/upload/`, {
     method: 'POST',
     body: formData,
