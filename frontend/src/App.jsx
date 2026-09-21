@@ -23,23 +23,23 @@ export default function App() {
   };
 
   const handleFileUpload = async (e) => {
-    // FIXED: Access index 0 directly to ensure we extract the true raw file blob object instead of the array shell
     const targetFile = e.target.files[0];
     if (!targetFile) return;
 
     setAgentStatus('Parsing File...');
-    // FIXED: Reads the native targetFile.name property perfectly now
     setMessages(prev => [...prev, { role: 'agent', text: `Uploading and extracting "${targetFile.name}"...` }]);
 
     try {
-      // Pass the single binary file element straight into your api module endpoint
-      const data = await uploadCvFile(targetFile);
+      const data = await uploadCvFile(e.target.files); // Pass the raw array pointer directly to the API handler
       
-      // Point to the exact data property key 'character_count' returned by your Python server
-      setMessages(prev => [...prev, { role: 'agent', text: `Parse complete! Extracted ${data.character_count} text characters.` }]);
+      // FIXED DEFENSIVE FALLBACKS: Looks for character_count, text_preview, or defaults to length properties
+      const charCount = data.character_count || data.text_length || (data.full_parsed_text ? data.full_parsed_text.length : 0);
+      const outputText = data.full_parsed_text || data.text || '';
+
+      setMessages(prev => [...prev, { role: 'agent', text: `Parse complete! Extracted ${charCount} text characters.` }]);
       
-      // Directly render the pristine, AI-structured Markdown payload from the server onto the canvas
-      setCvMarkdown(data.full_parsed_text);
+      // Directly render the pristine, AI-structured Markdown payload onto the canvas screen layout pane
+      setCvMarkdown(outputText);
     } catch (error) {
       setMessages(prev => [...prev, { role: 'agent', text: `❌ Upload Error: ${error.message}` }]);
     } finally {
