@@ -19,7 +19,7 @@ export default function App() {
 
   const handleDownloadPDF = () => {
     // FIXED: Stripped the trailing slash here too
-    window.location.href = 'https://cv-backend-brm46w76uq-uc.a.run.app';
+    window.location.href = 'https://cv-backend-brm46w76uq-uc.a.run.app/download';
   };
 
   const handleFileUpload = async (e) => {
