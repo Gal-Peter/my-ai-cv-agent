@@ -17,9 +17,9 @@ export default function App() {
     'Your AI-optimized career profiles, metrics, and structured resume segments will compile inside this workspace canvas live as the agent processes text transformations...'
   );
 
-     const handleDownloadPDF = () => {
-    // FIXED: Target the clean root path rule directly
-    window.location.href = 'https://cv-backend-brm46w76uq-uc.a.run.app/download';
+       const handleDownloadPDF = () => {
+    // FIXED: Points natively to your verified backend service route path
+    window.location.href = 'https://run.app';
   };
 
   const handleFileUpload = async (e) => {

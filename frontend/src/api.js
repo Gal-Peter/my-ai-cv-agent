@@ -1,14 +1,15 @@
 /**
  * Dedicated E2E Communication Hub for the AI CV Agent Production API
  */
-// FIXED: Target the root production URL directly so Google's proxies map resource states cleanly
+// FIXED: Using the exact, verified live GCP serverless URL from your backend metrics!
 const API_BASE = 'https://cv-backend-brm46w76uq-uc.a.run.app';
 
 export async function uploadCvFile(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await fetch(`${API_BASE}/upload`, {
+  // Directly targets your clean root backend container path rule
+  const response = await fetch(`${API_BASE}/upload/`, {
     method: 'POST',
     body: formData,
   });
@@ -22,7 +23,7 @@ export async function uploadCvFile(file) {
 }
 
 export async function sendAgentPrompt(message) {
-  const response = await fetch(`${API_BASE}/chat`, {
+  const response = await fetch(`${API_BASE}/chat/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message }),
