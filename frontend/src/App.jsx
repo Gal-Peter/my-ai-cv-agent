@@ -23,16 +23,20 @@ export default function App() {
   };
 
   const handleFileUpload = async (e) => {
-    const targetFile = e.target.files[0];
-    if (!targetFile) return;
+    // FIXED: Target index 0 of the selection array matrix instantly to grab the raw file blob object
+    const filesList = e.target.files;
+    if (!filesList || filesList.length === 0) return;
+    
+    const selectedFile = filesList[0]; // Extract the absolute raw binary single file target
 
     setAgentStatus('Parsing File...');
-    setMessages(prev => [...prev, { role: 'agent', text: `Uploading and extracting "${targetFile.name}"...` }]);
+    // Reads the native selectedFile.name property perfectly
+    setMessages(prev => [...prev, { role: 'agent', text: `Uploading and extracting "${selectedFile.name}"...` }]);
 
     try {
-      const data = await uploadCvFile(e.target.files); // Pass the raw array pointer directly to the API handler
+      // Pass the actual single binary file element straight into your api module endpoint function
+      const data = await uploadCvFile(selectedFile);
       
-      // FIXED DEFENSIVE FALLBACKS: Looks for character_count, text_preview, or defaults to length properties
       const charCount = data.character_count || data.text_length || (data.full_parsed_text ? data.full_parsed_text.length : 0);
       const outputText = data.full_parsed_text || data.text || '';
 
