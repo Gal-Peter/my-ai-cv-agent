@@ -143,27 +143,80 @@ async def upload_cv(file: UploadFile = File(...)):
         return HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/chat")
-async def chat_with_agent(payload: ChatMessage):
-    cv_data = session_store.get("current_cv_text", "")
-    if not cv_data:
-        raise HTTPException(status_code=400, detail="No active document found in session cache.")
-    if not agent_brain:
-        return {"status": "success", "agent_response": cv_data}
-    system_prompt = (
-        "You are an expert ATS technical recruiter. Review the formatted Markdown resume and modify it per request.\n\n"
-        "RULES:\n"
-        "1. Output clean Markdown using proper headers and bullet points (- ).\n"
-        "2. Return ONLY the raw markdown resume data block structure.\n\n"
-        "WORKSPACE:\n{cv_context}"
-    )
-    prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
+@app.post("/upload/")
+async def upload_cv(file: UploadFile = File(...)):
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+        
     try:
-        chain = prompt_template | agent_brain
-        response = chain.invoke({"cv_context": cv_data, "user_instruction": payload.message})
-        session_store["current_cv_text"] = response.content.strip()
-        return {"status": "success", "agent_response": response.content}
+        # Read the raw incoming binary stream completely
+        file_bytes = await file.read()
+        
+        # FIXED: Wrap the raw bytes inside a BytesIO memory buffer block to ensure PyMuPDF can seek the text layers
+        from io import BytesIO
+        pdf_stream = BytesIO(file_bytes)
+        
+        # Open the document using the stream buffer map layout
+        doc = fitz.open(stream=pdf_stream, filetype="pdf")
+        extracted_text_list = []
+        
+        for page in doc:
+            # First attempt: Collect text block matrix units sequential layout
+            blocks = page.get_text("blocks")
+            
+            if blocks:
+                blocks.sort(key=lambda b: (b[1], b[0]))  # Standard vertical top-to-bottom sort
+                for b in blocks:
+                    block_text = b[4].strip() if len(b) > 4 else ""
+                    if block_text:
+                        block_text = ultimate_unicode_cleaner(block_text)
+                        clean_block = "\n".join([line.strip() for line in block_text.splitlines() if line.strip()])
+                        extracted_text_list.append(clean_block)
+            else:
+                # FALLBACK BACKUP: If block arrays return empty spaces, scrape the direct page string characters natively
+                page_text = page.get_text("text")
+                if page_text:
+                    extracted_text_list.append(ultimate_unicode_cleaner(page_text))
+                    
+        doc.close()
+        raw_full_text = "\n\n".join(extracted_text_list).strip()
+        
+        # Log active metric status traces straight into your Cloud Run console panel logs
+        print(f"📦 DEBUG CONTAINER LOG: Successfully extracted {len(raw_full_text)} characters from file stream.")
+        
+        if not raw_full_text:
+            # If the layer is still empty, the resume is an image snapshot (scanned document)
+            raise HTTPException(status_code=422, detail="PDF text layer is empty. Scanned documents/images are not supported yet.")
+
+        if agent_brain:
+            try:
+                structuring_prompt = (
+                    "You are an expert ATS layout parser. Re-write this resume text into clean, structured Markdown format.\n\n"
+                    "CRITICAL RULES:\n"
+                    "1. Every single job responsibility line under companies MUST start with a hyphen and space ('- ').\n"
+                    "2. Clean formatting glitches like split words ('in-house') or space breaks in phone digits.\n"
+                    "3. Return ONLY the markdown resume text layer. No introductory boilerplates.\n\n"
+                    "RAW CV INPUT:\n{raw_text}"
+                )
+                prompt_template = ChatPromptTemplate.from_messages([("system", structuring_prompt)])
+                chain = prompt_template | agent_brain
+                response = chain.invoke({"raw_text": raw_full_text})
+                structured_markdown = response.content.strip()
+            except Exception:
+                structured_markdown = fallback_clean_text(raw_full_text)
+        else:
+            structured_markdown = fallback_clean_text(raw_full_text)
+            
+        session_store["current_cv_text"] = structured_markdown
+        return {
+            "filename": file.filename,
+            "status": "parsed",
+            "character_count": len(structured_markdown),
+            "text_preview": structured_markdown[:300],
+            "full_parsed_text": structured_markdown
+        }
     except Exception as e:
+        print(f"❌ Internal Processing Crash inside upload pipeline: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
