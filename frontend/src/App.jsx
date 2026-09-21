@@ -19,7 +19,7 @@ export default function App() {
 
      const handleDownloadPDF = () => {
     // FIXED: Target the clean root path rule directly
-    window.location.href = 'https://run.app';
+    window.location.href = 'https://cv-backend-brm46w76uq-uc.a.run.app/download';
   };
 
   const handleFileUpload = async (e) => {

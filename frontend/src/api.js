@@ -2,7 +2,7 @@
  * Dedicated E2E Communication Hub for the AI CV Agent Production API
  */
 // FIXED: Target the root production URL directly so Google's proxies map resource states cleanly
-const API_BASE = 'https://run.app';
+const API_BASE = 'https://cv-backend-brm46w76uq-uc.a.run.app/';
 
 export async function uploadCvFile(file) {
   const formData = new FormData();
