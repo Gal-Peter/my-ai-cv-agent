@@ -23,18 +23,17 @@ export default function App() {
   };
 
   const handleFileUpload = async (e) => {
-    // FIXED: Target index 0 of the selection array matrix instantly to grab the raw file blob object
+    // FIXED: Swapped out accidental parenthesis format for true standard array index square brackets
     const filesList = e.target.files;
     if (!filesList || filesList.length === 0) return;
     
-    const selectedFile = filesList[0]; // Extract the absolute raw binary single file target
+    const selectedFile = filesList[0]; // Safely isolates the absolute raw binary file blob object
 
     setAgentStatus('Parsing File...');
-    // Reads the native selectedFile.name property perfectly
     setMessages(prev => [...prev, { role: 'agent', text: `Uploading and extracting "${selectedFile.name}"...` }]);
 
     try {
-      // Pass the actual single binary file element straight into your api module endpoint function
+      // Pass the true binary file element straight into your api module endpoint function
       const data = await uploadCvFile(selectedFile);
       
       const charCount = data.character_count || data.text_length || (data.full_parsed_text ? data.full_parsed_text.length : 0);
