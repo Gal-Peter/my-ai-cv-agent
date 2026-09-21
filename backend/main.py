@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# RESTORED PLATYPUS MODULE SCHEMAS NATIVELY
+# ReportLab core typesetting elements
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
@@ -21,13 +21,14 @@ load_dotenv()
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
-app = FastAPI(title="AI CV Agent Orchestrator API")
+# FIXED: Turn off redirect_slashes to prevent Google Cloud's proxies from throwing 404 errors
+app = FastAPI(title="AI CV Agent Orchestrator API", redirect_slashes=False)
 
 # PRODUCTION CORS OVERRIDE: Allow absolute public access for serverless requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows any web browser origin to securely talk to your API
-    allow_credentials=False,  # Required by FastAPI when using origin wildcards
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -38,7 +39,7 @@ agent_brain = None
 if api_key and not api_key.startswith("your_"):
     agent_brain = ChatGroq(model="openai/gpt-oss-120b", temperature=0.2)
 else:
-    print("⚠️ DOCKER LOG WARNING: GROQ_API_KEY is missing or invalid. Activating native Python text cleansing backup router.")
+    print("⚠️ DOCKER LOG WARNING: GROQ_API_KEY is missing or invalid.")
 
 session_store = {"current_cv_text": ""}
 
@@ -48,42 +49,22 @@ class ChatMessage(BaseModel):
 
 
 def ultimate_unicode_cleaner(text_data):
-    """
-    Strong normalization and cleaning function that aggressively targets soft hyphens,
-    hidden binary byte tags, and non-printable text characters to permanently resolve square blocks.
-    """
     if not text_data:
         return ""
-    
-    # 1. Normalize characters to decompose special embedded font ligatures
     clean = unicodedata.normalize('NFKC', text_data)
-    
-    # 2. Directly swap common soft hyphen character layers and broken blocks
     clean = clean.replace('\xad', '').replace('\xa0', ' ').replace('\u200b', '')
     clean = clean.replace('█', '').replace('■', '').replace('●', '').replace('•', '')
-    
-    # 3. Bulletproof regular expression: Strip ANY remaining hidden control code/symbol
-    # Keep only standard printable ASCII, punctuation, numbers, and Hebrew character blocks
     clean = re.sub(r'[^\x20-\x7E\u0590-\u05FF\n]', '', clean)
-    
-    # 4. Collapse accidental double spaces left behind by the cleaning pass
     clean = re.sub(r' +', ' ', clean)
-    
     return clean
 
 
 def fallback_clean_text(raw_text):
-    """
-    Advanced fallback parser that strips hidden bytecode artifacts 
-    and splits dense paragraph blocks into clean, structured Markdown lists.
-    """
     if not raw_text:
         return ""
-    
     clean = ultimate_unicode_cleaner(raw_text)
     lines = [line.strip() for line in clean.splitlines() if line.strip()]
     formatted_lines = []
-    
     for line in lines:
         if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary"]):
             formatted_lines.append(f"\n## {line}\n")
@@ -100,7 +81,6 @@ def fallback_clean_text(raw_text):
                 formatted_lines.append(f"- {line}")
             else:
                 formatted_lines.append(line)
-                
     return "\n".join(formatted_lines).strip()
 
 
@@ -109,30 +89,26 @@ async def root():
     return {"status": "healthy", "agent": "CV Production Stack"}
 
 
-@app.post("/api/upload")
+# FIXED: Standardized direct base path strings without trailing slashes
+@app.post("/upload")
 async def upload_cv(file: UploadFile = File(...)):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-        
     try:
         file_bytes = await file.read()
         doc = fitz.open(stream=file_bytes, filetype="pdf")
-        
         extracted_text_list = []
         for page in doc:
             blocks = page.get_text("blocks")
-            blocks.sort(key=lambda b: (b[1], b[0]))  # Standard top-to-bottom vertical layout alignment
-            
+            blocks.sort(key=lambda b: (b, b))
             for b in blocks:
-                block_text = b[4]  # Correctly extract text index string from block tuple map securely
+                block_text = b
                 if block_text and isinstance(block_text, str):
                     block_text = ultimate_unicode_cleaner(block_text)
                     clean_block = "\n".join([line.strip() for line in block_text.splitlines() if line.strip()])
                     extracted_text_list.append(clean_block)
-                
         doc.close()
         raw_full_text = "\n\n".join(extracted_text_list).strip()
-        
         if not raw_full_text:
             raise HTTPException(status_code=422, detail="PDF text layer is empty or scanned.")
 
@@ -164,19 +140,16 @@ async def upload_cv(file: UploadFile = File(...)):
             "full_parsed_text": structured_markdown
         }
     except Exception as e:
-        print(f"❌ Internal Processing Crash: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/chat")
+@app.post("/chat")
 async def chat_with_agent(payload: ChatMessage):
     cv_data = session_store.get("current_cv_text", "")
     if not cv_data:
         raise HTTPException(status_code=400, detail="No active document found in session cache.")
-        
     if not agent_brain:
         return {"status": "success", "agent_response": cv_data}
-        
     system_prompt = (
         "You are an expert ATS technical recruiter. Review the formatted Markdown resume and modify it per request.\n\n"
         "RULES:\n"
@@ -187,32 +160,24 @@ async def chat_with_agent(payload: ChatMessage):
     prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
     try:
         chain = prompt_template | agent_brain
-        response = chain.invoke({
-            "cv_context": cv_data,
-            "user_instruction": payload.message
-        })
+        response = chain.invoke({"cv_context": cv_data, "user_instruction": payload.message})
         session_store["current_cv_text"] = response.content.strip()
         return {"status": "success", "agent_response": response.content}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Groq API Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/download")
+@app.get("/download")
 async def download_pdf():
     md_content = session_store.get("current_cv_text", "")
     if not md_content:
         raise HTTPException(status_code=400, detail="No resume data available.")
-        
-    # Apply global string sweep filter right before generating the document template
     clean_md = ultimate_unicode_cleaner(md_content)
-    
     raw_html = markdown.markdown(clean_md)
     soup = BeautifulSoup(raw_html, "html.parser")
-    
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
     styles = getSampleStyleSheet()
-    
     body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#1f2937', spaceAfter=4)
     h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor='#111827', spaceAfter=12)
     h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=13, leading=18, textColor='#1e40af', spaceBefore=16, spaceAfter=8)
@@ -234,14 +199,13 @@ async def download_pdf():
                     text = text[1:].strip()
                 if text:
                     list_items.append(ListItem(Paragraph(text, body_style), leftIndent=12, bulletOffsetY=-1))
-            
             if list_items:
                 story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=6))
-            
     try:
         doc.build(story)
         pdf_bytes = buffer.getvalue()
         buffer.close()
         return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=Optimized_Resume.pdf"})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ReportLab Engine Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    

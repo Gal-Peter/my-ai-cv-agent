@@ -1,17 +1,15 @@
 /**
  * Dedicated E2E Communication Hub for the AI CV Agent Production API
  */
-// Verified Live GCP Backend Domain Target (No trailing slash here)
 const API_BASE = 'https://cv-backend-brm46w76uq-uc.a.run.app';
 
 export async function uploadCvFile(fileCollection) {
   const formData = new FormData();
-  
-  // FIXED: Converted comment identifier symbol to clean double-slash JavaScript syntax rule
   const targetFile = fileCollection[0] || fileCollection;
   formData.append('file', targetFile);
 
-  const response = await fetch(`${API_BASE}/upload/`, {
+  // FIXED: Straight, clean base path mapping matching the backend route exactly
+  const response = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
     body: formData,
   });
@@ -25,7 +23,7 @@ export async function uploadCvFile(fileCollection) {
 }
 
 export async function sendAgentPrompt(message) {
-  const response = await fetch(`${API_BASE}/chat/`, {
+  const response = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message }),
@@ -33,7 +31,7 @@ export async function sendAgentPrompt(message) {
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(errorData.detail || 'API socket failed to return reasoning vectors');
+    throw new Error(errorData.detail || 'API socket failed');
   }
 
   return response.json();
