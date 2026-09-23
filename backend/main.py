@@ -5,26 +5,19 @@ import unicodedata
 import markdown
 from io import BytesIO
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-
-# ReportLab core typesetting elements
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
 
 load_dotenv()
 
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
-# FIXED: Turn off redirect_slashes to prevent Google Cloud's proxies from throwing 404 errors
 app = FastAPI(title="AI CV Agent Orchestrator API", redirect_slashes=False)
 
-# PRODUCTION CORS OVERRIDE: Allow absolute public access for serverless requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,20 +26,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize the Groq Engine safely checking environment bounds
 api_key = os.getenv("GROQ_API_KEY")
 agent_brain = None
 if api_key and not api_key.startswith("your_"):
     agent_brain = ChatGroq(model="openai/gpt-oss-120b", temperature=0.2)
-else:
-    print("⚠️ DOCKER LOG WARNING: GROQ_API_KEY is missing or invalid.")
 
-session_store = {"current_cv_text": ""}
-
-
-class ChatMessage(BaseModel):
+class ChatPayload(BaseModel):
     message: str
+    cv_text: str  # Stateless State Sync: Pass the active text context along with the prompt
 
+class DownloadPayload(BaseModel):
+    cv_text: str  # Stateless State Sync: Pass the text cleanly to the compiler path
 
 def ultimate_unicode_cleaner(text_data):
     if not text_data:
@@ -57,7 +47,6 @@ def ultimate_unicode_cleaner(text_data):
     clean = re.sub(r'[^\x20-\x7E\u0590-\u05FF\n]', '', clean)
     clean = re.sub(r' +', ' ', clean)
     return clean
-
 
 def fallback_clean_text(raw_text):
     if not raw_text:
@@ -83,27 +72,20 @@ def fallback_clean_text(raw_text):
                 formatted_lines.append(line)
     return "\n".join(formatted_lines).strip()
 
-
 @app.get("/")
 async def root():
     return {"status": "healthy", "agent": "CV Production Stack"}
-
 
 @app.post("/upload")
 async def upload_cv(file: UploadFile = File(...)):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-        
     try:
-        # Read the raw incoming binary stream completely
         file_bytes = await file.read()
-        
         from io import BytesIO
-        import pdfplumber  # Import the advanced data extraction fallback engine
+        import pdfplumber
         
         extracted_text_list = []
-        
-        # --- ENGINE 1: PyMuPDF Block Parsing ---
         pdf_stream = BytesIO(file_bytes)
         doc = fitz.open(stream=pdf_stream, filetype="pdf")
         for page in doc:
@@ -111,35 +93,25 @@ async def upload_cv(file: UploadFile = File(...)):
             if blocks:
                 blocks.sort(key=lambda b: (b[1], b[0]))
                 for b in blocks:
-                    block_text = b[4].strip() if len(b) > 4 else ""
-                    if block_text:
-                        extracted_text_list.append(block_text)
+                    if len(b) > 4 and isinstance(b[4], str):
+                        extracted_text_list.append(b[4])
         doc.close()
         
         raw_full_text = "\n\n".join(extracted_text_list).strip()
         
-        # --- ENGINE 2: Fallback to pdfplumber if text evaluates to 0 ---
         if not raw_full_text or len(raw_full_text) < 50:
-            print("⚠️ PyMuPDF returned 0 characters. Activating pdfplumber deep extraction fallback...")
             extracted_text_list = []
-            
-            # Reset stream pointer position
             pdf_stream.seek(0)
             with pdfplumber.open(pdf_stream) as plumber_doc:
                 for page in plumber_doc.pages:
-                    # Extract text using structural layout settings
                     page_text = page.extract_text(layout=False)
                     if page_text:
                         extracted_text_list.append(page_text)
-            
             raw_full_text = "\n\n".join(extracted_text_list).strip()
 
-        # Final Clean Pass
         raw_full_text = ultimate_unicode_cleaner(raw_full_text)
-        print(f"📦 DEBUG: Successfully extracted {len(raw_full_text)} characters from the document layout.")
-        
         if not raw_full_text or len(raw_full_text) < 10:
-            raise HTTPException(status_code=422, detail="PDF layer is empty or unextractable. Try exporting your file as a standard text-based PDF.")
+            raise HTTPException(status_code=422, detail="PDF layer is empty or unextractable.")
 
         if agent_brain:
             try:
@@ -160,104 +132,47 @@ async def upload_cv(file: UploadFile = File(...)):
         else:
             structured_markdown = fallback_clean_text(raw_full_text)
             
-        session_store["current_cv_text"] = structured_markdown
         return {
             "filename": file.filename,
             "status": "parsed",
             "character_count": len(structured_markdown),
-            "text_preview": structured_markdown[:300],
             "full_parsed_text": structured_markdown
         }
     except Exception as e:
-        print(f"❌ Internal Processing Crash inside upload pipeline: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/upload/")
-async def upload_cv(file: UploadFile = File(...)):
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+@app.post("/chat")
+async def chat_with_agent(payload: ChatPayload):
+    if not payload.cv_text:
+        raise HTTPException(status_code=400, detail="No active document found in transaction context.")
+    if not agent_brain:
+        return {"status": "success", "agent_response": payload.cv_text}
         
+    system_prompt = (
+        "You are an expert ATS technical recruiter. Review the formatted Markdown resume and modify it per request.\n\n"
+        "RULES:\n"
+        "1. Output clean Markdown using proper headers and bullet points (- ).\n"
+        "2. Do not invent new facts. If asked to modify sections, perform the specific replacement exactly.\n"
+        "3. Return ONLY the raw markdown resume data block structure. No chat filler or pleasantries.\n\n"
+        "WORKSPACE:\n{cv_context}"
+    )
+    prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
     try:
-        # Read the raw incoming binary stream completely
-        file_bytes = await file.read()
-        
-        # FIXED: Wrap the raw bytes inside a BytesIO memory buffer block to ensure PyMuPDF can seek the text layers
-        from io import BytesIO
-        pdf_stream = BytesIO(file_bytes)
-        
-        # Open the document using the stream buffer map layout
-        doc = fitz.open(stream=pdf_stream, filetype="pdf")
-        extracted_text_list = []
-        
-        for page in doc:
-            # First attempt: Collect text block matrix units sequential layout
-            blocks = page.get_text("blocks")
-            
-            if blocks:
-                blocks.sort(key=lambda b: (b[1], b[0]))  # Standard vertical top-to-bottom sort
-                for b in blocks:
-                    block_text = b[4].strip() if len(b) > 4 else ""
-                    if block_text:
-                        block_text = ultimate_unicode_cleaner(block_text)
-                        clean_block = "\n".join([line.strip() for line in block_text.splitlines() if line.strip()])
-                        extracted_text_list.append(clean_block)
-            else:
-                # FALLBACK BACKUP: If block arrays return empty spaces, scrape the direct page string characters natively
-                page_text = page.get_text("text")
-                if page_text:
-                    extracted_text_list.append(ultimate_unicode_cleaner(page_text))
-                    
-        doc.close()
-        raw_full_text = "\n\n".join(extracted_text_list).strip()
-        
-        # Log active metric status traces straight into your Cloud Run console panel logs
-        print(f"📦 DEBUG CONTAINER LOG: Successfully extracted {len(raw_full_text)} characters from file stream.")
-        
-        if not raw_full_text:
-            # If the layer is still empty, the resume is an image snapshot (scanned document)
-            raise HTTPException(status_code=422, detail="PDF text layer is empty. Scanned documents/images are not supported yet.")
-
-        if agent_brain:
-            try:
-                structuring_prompt = (
-                    "You are an expert ATS layout parser. Re-write this resume text into clean, structured Markdown format.\n\n"
-                    "CRITICAL RULES:\n"
-                    "1. Every single job responsibility line under companies MUST start with a hyphen and space ('- ').\n"
-                    "2. Clean formatting glitches like split words ('in-house') or space breaks in phone digits.\n"
-                    "3. Return ONLY the markdown resume text layer. No introductory boilerplates.\n\n"
-                    "RAW CV INPUT:\n{raw_text}"
-                )
-                prompt_template = ChatPromptTemplate.from_messages([("system", structuring_prompt)])
-                chain = prompt_template | agent_brain
-                response = chain.invoke({"raw_text": raw_full_text})
-                structured_markdown = response.content.strip()
-            except Exception:
-                structured_markdown = fallback_clean_text(raw_full_text)
-        else:
-            structured_markdown = fallback_clean_text(raw_full_text)
-            
-        session_store["current_cv_text"] = structured_markdown
-        return {
-            "filename": file.filename,
-            "status": "parsed",
-            "character_count": len(structured_markdown),
-            "text_preview": structured_markdown[:300],
-            "full_parsed_text": structured_markdown
-        }
+        chain = prompt_template | agent_brain
+        response = chain.invoke({"cv_context": payload.cv_text, "user_instruction": payload.message})
+        return {"status": "success", "agent_response": response.content.strip()}
     except Exception as e:
-        print(f"❌ Internal Processing Crash inside upload pipeline: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.get("/download")
-async def download_pdf():
-    md_content = session_store.get("current_cv_text", "")
-    if not md_content:
+@app.post("/download")
+async def download_pdf(payload: DownloadPayload):
+    if not payload.cv_text:
         raise HTTPException(status_code=400, detail="No resume data available.")
-    clean_md = ultimate_unicode_cleaner(md_content)
+        
+    clean_md = ultimate_unicode_cleaner(payload.cv_text)
     raw_html = markdown.markdown(clean_md)
     soup = BeautifulSoup(raw_html, "html.parser")
+    
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
     styles = getSampleStyleSheet()
@@ -291,4 +206,3 @@ async def download_pdf():
         return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=Optimized_Resume.pdf"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
