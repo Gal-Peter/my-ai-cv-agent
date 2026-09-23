@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { uploadCvFile, sendAgentPrompt } from './api';
+// FIXED: Restored explicit method lookup import reference natively
+import { uploadCvFile, sendAgentPrompt, downloadCvFile } from './api';
 
 export default function App() {
   const [messages, setMessages] = useState([
