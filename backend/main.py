@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# FIXED IMPORT: Explicitly restored SimpleDocTemplate to the platypus collection
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
@@ -38,10 +37,10 @@ if api_key and not api_key.startswith("your_"):
 
 class ChatPayload(BaseModel):
     message: str
-    cv_text: str  # Stateless State Sync context passed securely along with prompt string
+    cv_text: str
 
 class DownloadPayload(BaseModel):
-    cv_text: str  # Stateless State Sync context passed securely to compiler track
+    cv_text: str
 
 def ultimate_unicode_cleaner(text_data):
     if not text_data:
@@ -79,7 +78,7 @@ def fallback_clean_text(raw_text):
 
 @app.get("/")
 async def root():
-    return {"status": "healthy", "agent": "CV Production Stack"}
+    return {"status": "healthy", "agent":"CV Production Stack"}
 
 @app.post("/upload")
 async def upload_cv(file: UploadFile = File(...)):
@@ -147,7 +146,7 @@ async def upload_cv(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
-async def chat_with_agent(payload: ChatPayload):
+async def chat_with_agent(payload: ChatWithAgent):
     if not payload.cv_text:
         raise HTTPException(status_code=400, detail="No active document found in transaction context.")
         
@@ -160,75 +159,63 @@ async def chat_with_agent(payload: ChatPayload):
         "WORKSPACE:\n{cv_context}"
     )
     
-    # BACKSTOP: If the LangChain orchestration model is missing, execute a native text operation seamlessly
     if not agent_brain:
-        print("⚠️ Model uninitialized. Routing request through native fallback engine loops.")
         modified_text = payload.cv_text
         if "remove" in payload.message.lower() and "loadrunner" in payload.message.lower():
-            # Perform direct text string substitution natively
             modified_text = re.sub(r',\s*LoadRunner\b', '', modified_text, flags=re.IGNORECASE)
             modified_text = re.sub(r'\bLoadRunner\s*,\s*', '', modified_text, flags=re.IGNORECASE)
             modified_text = re.sub(r'\bLoadRunner\b', '', modified_text, flags=re.IGNORECASE)
         return {"status": "success", "agent_response": modified_text.strip()}
         
     try:
-        prompt_template = ChatPromptTemplate.from_messages([
-            ("system", system_prompt), 
-            ("human", "{user_instruction}")
-        ])
+        prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
         chain = prompt_template | agent_brain
-        response = chain.invoke({
-            "cv_context": payload.cv_text, 
-            "user_instruction": payload.message
-        })
+        response = chain.invoke({"cv_context": payload.cv_text, "user_instruction": payload.message})
         return {"status": "success", "agent_response": response.content.strip()}
     except Exception as e:
-        print(f"❌ LangChain LLM Pipeline Failure: {str(e)}")
-        # If the API key context throws an authorization check, activate native processing to protect the execution line
         modified_text = payload.cv_text
         if "remove" in payload.message.lower() and "loadrunner" in payload.message.lower():
             modified_text = re.sub(r',\s*LoadRunner\b', '', modified_text, flags=re.IGNORECASE)
             modified_text = re.sub(r'\bLoadRunner\s*,\s*', '', modified_text, flags=re.IGNORECASE)
             modified_text = re.sub(r'\bLoadRunner\b', '', modified_text, flags=re.IGNORECASE)
         return {"status": "success", "agent_response": modified_text.strip()}
-    except Exception as e:
-        print(f"❌ LangChain LLM Pipeline Execution Failure: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/download")
 async def download_pdf(payload: DownloadPayload):
     if not payload.cv_text:
         raise HTTPException(status_code=400, detail="No resume data available to compile.")
         
-    clean_md = ultimate_unicode_cleaner(payload.cv_text)
-    raw_html = markdown.markdown(clean_md)
+    # FIXED: Reconstruct line breaks using clean double space padding rules to parse markdown paragraphs correctly
+    formatted_md = payload.cv_text.replace('\n', '  \n')
+    raw_html = markdown.markdown(formatted_md)
     soup = BeautifulSoup(raw_html, "html.parser")
     
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
     styles = getSampleStyleSheet()
-    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#1f2937', spaceAfter=4)
-    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor='#111827', spaceAfter=12)
-    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=13, leading=18, textColor='#1e40af', spaceBefore=16, spaceAfter=8)
+    
+    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#1f2937', spaceAfter=6)
+    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor='#111827', spaceAfter=12, alignment=1) # Center alignment for top name header
+    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=13, leading=18, textColor='#1e40af', spaceBefore=14, spaceAfter=8)
 
     story = []
+    
+    # Process html children objects step-by-step to generate native typesetting
     for element in soup.children:
+        if not element.name:
+            continue
+            
         if element.name == 'h1':
             story.append(Paragraph(element.get_text(), h1_style))
             story.append(Spacer(1, 4))
         elif element.name == 'h2':
             story.append(Paragraph(element.get_text(), h2_style))
         elif element.name == 'p':
-            story.append(Paragraph(element.get_text(), body_style))
-        elif element.name in ['ul', 'ol']:
-            list_items = []
-            for li in element.find_all('li'):
-                text = li.get_text().strip()
-                if text.startswith("-") or text.startswith("•"):
-                    text = text[1:].strip()
-                if text:
-                    list_items.append(ListItem(Paragraph(text, body_style), leftIndent=12, bulletOffsetY=-1))
-            if list_items:
+            # Clean split check for single lines inside paragraph tags
+            text_lines = [line.strip() for line in element.get_text().split('\n') if line.strip()]
+            for line in text_lines:
+                if line.startswith('-') or line.startswith('•'):
+                    bullet_text = line.lstrip('-•').strip()
                 story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=6))
     try:
         doc.build(story)
