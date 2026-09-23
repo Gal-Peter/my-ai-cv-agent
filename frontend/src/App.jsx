@@ -79,16 +79,24 @@ export default function App() {
     setAgentStatus('Thinking...');
 
     try {
-      // FIXED PARAMS: Pass the current active resume text layer layout along with the instruction prompt
+      // Pass the current workspace Markdown context straight to the stateless engine call
       const data = await sendAgentPrompt(userMessage, cvMarkdown);
       
-      // Update your preview canvas dynamically with the pristine AI-modified data
+      // Update the main state workspace canvas with the fresh AI-modified payload block
       setCvMarkdown(data.agent_response);
       setMessages(prev => [...prev, { role: 'agent', text: 'Workspace successfully refined and optimized!' }]);
     } catch (error) {
-      // Graceful parsing lookup layout formatting rule
-      const errorMessage = typeof error.message === 'object' ? JSON.stringify(error.message) : error.message;
-      setMessages(prev => [...prev, { role: 'agent', text: `❌ Processing Error: ${errorMessage}` }]);
+      console.error("📋 Direct Client Pipeline Crash Trace:", error);
+      
+      // DEEP UNWRAP: Safely drill into the error data layers to extract the raw string explanation
+      let cleanErrorMessage = "Network communication timeout.";
+      if (error && error.message) {
+        cleanErrorMessage = typeof error.message === 'object' 
+          ? (error.message.detail || JSON.stringify(error.message)) 
+          : error.message;
+      }
+      
+      setMessages(prev => [...prev, { role: 'agent', text: `❌ Processing Error: ${cleanErrorMessage}` }]);
     } finally {
       setAgentStatus('Idle');
     }
