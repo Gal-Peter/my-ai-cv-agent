@@ -64,7 +64,12 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = async () => {
+  // FIXED FORM PARAMETER: Added 'e' event token check to intercept and halt default page refreshes
+  const handleSendMessage = async (e) => {
+    if (e && e.preventDefault) {
+      e.preventDefault(); // CRITICAL SHIELD: Stops browser form actions from wiping memory states
+    }
+    
     if (!input.trim() || !cvMarkdown) return;
 
     const userMessage = input.trim();
@@ -73,23 +78,19 @@ export default function App() {
     setAgentStatus('Thinking...');
 
     try {
-      // Pass the current workspace Markdown context straight to the stateless engine call
+      // Pass the current state text context along with the instruction prompt
       const data = await sendAgentPrompt(userMessage, cvMarkdown);
       
-      // Update the main state workspace canvas with the fresh AI-modified payload block
+      // Update your preview canvas layout dynamically without breaking previous lines
       setCvMarkdown(data.agent_response);
       setMessages(prev => [...prev, { role: 'agent', text: 'Workspace successfully refined and optimized!' }]);
     } catch (error) {
-      console.error("📋 Direct Client Pipeline Crash Trace:", error);
-      
-      // DEEP UNWRAP: Safely drill into the error data layers to extract the raw string explanation
       let cleanErrorMessage = "Network communication timeout.";
       if (error && error.message) {
         cleanErrorMessage = typeof error.message === 'object' 
           ? (error.message.detail || JSON.stringify(error.message)) 
           : error.message;
       }
-      
       setMessages(prev => [...prev, { role: 'agent', text: `❌ Processing Error: ${cleanErrorMessage}` }]);
     } finally {
       setAgentStatus('Idle');
