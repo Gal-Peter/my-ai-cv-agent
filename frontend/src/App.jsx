@@ -20,18 +20,12 @@ export default function App() {
   const handleDownloadPDF = async () => {
     if (!cvMarkdown) return;
     setAgentStatus('Compiling PDF...');
-    
     try {
-      // 1. Send current modified text state cleanly to the serverless container endpoint
       const blob = await downloadCvFile(cvMarkdown);
-      
-      // 2. Form a secure binary object link right inside the browser engine
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = 'Optimized_Resume.pdf';
-      
-      // 3. Trigger a click event to prompt a crisp local file download
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

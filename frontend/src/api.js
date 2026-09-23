@@ -1,4 +1,8 @@
-const API_BASE = 'https://run.app';
+/**
+ * Dedicated E2E Communication Hub for the AI CV Agent Production API
+ */
+// FIXED: Bound strictly to your active, live backend load balancer URL mapping
+const API_BASE = 'https://cv-backend-brm46w76uq-uc.a.run.app';
 
 export async function uploadCvFile(fileCollection) {
   const formData = new FormData();
@@ -18,7 +22,6 @@ export async function uploadCvFile(fileCollection) {
 }
 
 export async function sendAgentPrompt(message, cvText) {
-  // Sync the current local state text over the web call to the backend container
   const response = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -33,7 +36,6 @@ export async function sendAgentPrompt(message, cvText) {
 }
 
 export async function downloadCvFile(cvText) {
-  // Triggers a stateless secure download stream by passing the modified text directly
   const response = await fetch(`${API_BASE}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
