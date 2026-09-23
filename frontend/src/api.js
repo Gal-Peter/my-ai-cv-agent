@@ -1,7 +1,4 @@
-/**
- * Dedicated E2E Communication Hub for the AI CV Agent Production API
- */
-// FIXED: Bound strictly to your active, live backend load balancer URL mapping
+// Ensure this base address matches your verified cloud run backend link perfectly
 const API_BASE = 'https://cv-backend-brm46w76uq-uc.a.run.app';
 
 export async function uploadCvFile(fileCollection) {
@@ -35,15 +32,16 @@ export async function sendAgentPrompt(message, cvText) {
   return response.json();
 }
 
+// FIXED PAYLOAD: Enforces clean string variable mapping keys to match FastAPI schemas
 export async function downloadCvFile(cvText) {
   const response = await fetch(`${API_BASE}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cv_text: cvText }),
+    body: JSON.stringify({ cv_text: cvText }), // Map precisely to payload.cv_text
   });
 
   if (!response.ok) {
-    throw new Error('Failed to generate PDF compilation stream');
+    throw new Error('Failed to generate PDF compilation stream from backend');
   }
   return response.blob();
 }
