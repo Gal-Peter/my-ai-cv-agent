@@ -5,7 +5,7 @@ import unicodedata
 import markdown
 from io import BytesIO
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -51,7 +51,6 @@ def ultimate_unicode_cleaner(text_data):
     clean = re.sub(r'[^\x20-\x7E\u0590-\u05FF\n]', '', clean)
     clean = re.sub(r' +', ' ', clean)
     return clean
-
 def fallback_clean_text(raw_text):
     if not raw_text:
         return ""
@@ -78,7 +77,7 @@ def fallback_clean_text(raw_text):
 
 @app.get("/")
 async def root():
-    return {"status": "healthy", "agent":"CV Production Stack"}
+    return {"status": "healthy", "agent": "CV Production Stack"}
 
 @app.post("/upload")
 async def upload_cv(file: UploadFile = File(...)):
@@ -115,7 +114,7 @@ async def upload_cv(file: UploadFile = File(...)):
 
         raw_full_text = ultimate_unicode_cleaner(raw_full_text)
         if not raw_full_text or len(raw_full_text) < 10:
-            raise HTTPException(status_code=422, detail="PDF layer is empty or unextractable.")
+            raise HTTPException(status_code=422, detail="PDF layer empty.")
 
         if agent_brain:
             try:
@@ -146,9 +145,9 @@ async def upload_cv(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
-async def chat_with_agent(payload: ChatWithAgent):
+async def chat_with_agent(payload: ChatPayload):
     if not payload.cv_text:
-        raise HTTPException(status_code=400, detail="No active document found in transaction context.")
+        raise HTTPException(status_code=400, detail="No active document found.")
         
     system_prompt = (
         "You are an expert ATS technical recruiter. Review the formatted Markdown resume and modify it per request.\n\n"
@@ -183,40 +182,36 @@ async def chat_with_agent(payload: ChatWithAgent):
 @app.post("/download")
 async def download_pdf(payload: DownloadPayload):
     if not payload.cv_text:
-        raise HTTPException(status_code=400, detail="No resume data available to compile.")
+        raise HTTPException(status_code=400, detail="No resume data available.")
         
-    # FIXED: Reconstruct line breaks using clean double space padding rules to parse markdown paragraphs correctly
-    formatted_md = payload.cv_text.replace('\n', '  \n')
-    raw_html = markdown.markdown(formatted_md)
-    soup = BeautifulSoup(raw_html, "html.parser")
-    
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
     styles = getSampleStyleSheet()
     
-    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#1f2937', spaceAfter=6)
-    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor='#111827', spaceAfter=12, alignment=1) # Center alignment for top name header
-    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=13, leading=18, textColor='#1e40af', spaceBefore=14, spaceAfter=8)
+    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#1f2937', spaceAfter=5)
+    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=22, leading=26, textColor='#111827', spaceBefore=5, spaceAfter=8, alignment=1)
+    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=12, leading=16, textColor='#1e40af', spaceBefore=14, spaceAfter=6)
 
     story = []
-    
-    # Process html children objects step-by-step to generate native typesetting
-    for element in soup.children:
-        if not element.name:
+    raw_lines = payload.cv_text.splitlines()
+    for raw_line in raw_lines:
+        line = raw_line.strip()
+        if not line:
             continue
             
-        if element.name == 'h1':
-            story.append(Paragraph(element.get_text(), h1_style))
+        if line.startswith('# '):
+            story.append(Paragraph(line[2:].strip(), h1_style))
             story.append(Spacer(1, 4))
-        elif element.name == 'h2':
-            story.append(Paragraph(element.get_text(), h2_style))
-        elif element.name == 'p':
-            # Clean split check for single lines inside paragraph tags
-            text_lines = [line.strip() for line in element.get_text().split('\n') if line.strip()]
-            for line in text_lines:
-                if line.startswith('-') or line.startswith('•'):
-                    bullet_text = line.lstrip('-•').strip()
-                story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=6))
+        elif line.startswith('## '):
+            story.append(Paragraph(line[3:].strip(), h2_style))
+        elif line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
+            bullet_clean = line[2:].strip()
+            if bullet_clean:
+                bullet_item = ListItem(Paragraph(bullet_clean, body_style), leftIndent=12, bulletOffsetY=-1)
+                story.append(ListFlowable([bullet_item], bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=4))
+        else:
+            story.append(Paragraph(line, body_style))
+                
     try:
         doc.build(story)
         pdf_bytes = buffer.getvalue()
