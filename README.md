@@ -3,9 +3,8 @@
 An enterprise-grade, full-stack, multi-container automation platform that extracts, structures, and optimizes resume data using generative AI models. Built with a serverless, stateless architecture, this application seamlessly parses unstructured PDF documents into clean Markdown configurations and compiles them back into high-fidelity, ATS-optimized PDF downloads.
 
 ### 🌐 Live Production Application
-* **Web Interface UI:** [https://run.app](https://run.app)
-* **API Backend Gateway:** [https://run.app](https://run.app)
-
+* **Web Interface UI:** (https://cv-frontend-1090848858534.us-central1.run.app/)
+* **API Backend Gateway:** (https://cv-backend-1090848858534.us-central1.run.app/)
 ---
 
 ## 🛠️ System Architecture & Data Flow
