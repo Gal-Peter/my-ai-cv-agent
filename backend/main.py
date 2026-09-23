@@ -161,12 +161,21 @@ async def chat_with_agent(payload: ChatPayload):
         "3. Return ONLY the raw markdown resume data block structure. No chat filler or pleasantries.\n\n"
         "WORKSPACE:\n{cv_context}"
     )
-    prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
+    # FIXED VARIABLES: Guaranteed matching configuration signatures
+    prompt_template = ChatPromptTemplate.from_messages([
+        ("system", system_prompt), 
+        ("human", "{user_instruction}")
+    ])
     try:
         chain = prompt_template | agent_brain
-        response = chain.invoke({"cv_context": payload.cv_text, "user_instruction": payload.message})
+        # FIXED EXECUTION MAP: Variables pass cleanly under matching identifier parameters
+        response = chain.invoke({
+            "cv_context": payload.cv_text, 
+            "user_instruction": payload.message
+        })
         return {"status": "success", "agent_response": response.content.strip()}
     except Exception as e:
+        print(f"❌ LangChain LLM Pipeline Execution Failure: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/download")

@@ -70,26 +70,25 @@ export default function App() {
     }
   };
 
+  const handleSendMessage = async () => {
+    if (!input.trim() || !cvMarkdown) return;
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!input.trim()) return;
-    
-    const userPrompt = input;
-    setMessages(prev => [...prev, { role: 'user', text: userPrompt }]);
+    const userMessage = input.trim();
     setInput('');
-    setAgentStatus('Optimizing...');
+    setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
+    setAgentStatus('Thinking...');
 
     try {
-      const data = await sendAgentPrompt(userPrompt);
-      if (data.status === 'success') {
-        setCvMarkdown(data.agent_response);
-        setMessages(prev => [...prev, { role: 'agent', text: '✨ CV optimization logic applied! Review the newly generated structures in the right preview window.' }]);
-      } else {
-        setMessages(prev => [...prev, { role: 'agent', text: data.agent_response }]);
-      }
+      // FIXED PARAMS: Pass the current active resume text layer layout along with the instruction prompt
+      const data = await sendAgentPrompt(userMessage, cvMarkdown);
+      
+      // Update your preview canvas dynamically with the pristine AI-modified data
+      setCvMarkdown(data.agent_response);
+      setMessages(prev => [...prev, { role: 'agent', text: 'Workspace successfully refined and optimized!' }]);
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'agent', text: `❌ Processing Error: ${error.message}` }]);
+      // Graceful parsing lookup layout formatting rule
+      const errorMessage = typeof error.message === 'object' ? JSON.stringify(error.message) : error.message;
+      setMessages(prev => [...prev, { role: 'agent', text: `❌ Processing Error: ${errorMessage}` }]);
     } finally {
       setAgentStatus('Idle');
     }
