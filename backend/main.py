@@ -11,6 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+# FIXED IMPORT: Explicitly restored SimpleDocTemplate to the platypus collection
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
+
 load_dotenv()
 
 from langchain_groq import ChatGroq
@@ -33,10 +38,10 @@ if api_key and not api_key.startswith("your_"):
 
 class ChatPayload(BaseModel):
     message: str
-    cv_text: str  # Stateless State Sync: Pass the active text context along with the prompt
+    cv_text: str  # Stateless State Sync context passed securely along with prompt string
 
 class DownloadPayload(BaseModel):
-    cv_text: str  # Stateless State Sync: Pass the text cleanly to the compiler path
+    cv_text: str  # Stateless State Sync context passed securely to compiler track
 
 def ultimate_unicode_cleaner(text_data):
     if not text_data:
@@ -91,10 +96,10 @@ async def upload_cv(file: UploadFile = File(...)):
         for page in doc:
             blocks = page.get_text("blocks")
             if blocks:
-                blocks.sort(key=lambda b: (b[1], b[0]))
+                blocks.sort(key=lambda b: (b, b))
                 for b in blocks:
-                    if len(b) > 4 and isinstance(b[4], str):
-                        extracted_text_list.append(b[4])
+                    if len(b) > 4 and isinstance(b, str):
+                        extracted_text_list.append(b)
         doc.close()
         
         raw_full_text = "\n\n".join(extracted_text_list).strip()
@@ -167,7 +172,7 @@ async def chat_with_agent(payload: ChatPayload):
 @app.post("/download")
 async def download_pdf(payload: DownloadPayload):
     if not payload.cv_text:
-        raise HTTPException(status_code=400, detail="No resume data available.")
+        raise HTTPException(status_code=400, detail="No resume data available to compile.")
         
     clean_md = ultimate_unicode_cleaner(payload.cv_text)
     raw_html = markdown.markdown(clean_md)
