@@ -179,6 +179,13 @@ async def chat_with_agent(payload: ChatPayload):
             modified_text = re.sub(r'\bLoadRunner\b', '', modified_text, flags=re.IGNORECASE)
         return {"status": "success", "agent_response": modified_text.strip()}
 
+def md_to_reportlab_html(text_data):
+    # Transform syntax tokens explicitly into ReportLab supported inline formatting tags
+    text_data = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text_data)
+    text_data = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text_data)
+    text_data = re.sub(r'\[(.*?)\]\((.*?)\)', r'<font color="#1e40af"><u>\1</u></font>', text_data)
+    return text_data
+
 @app.post("/download")
 async def download_pdf(payload: DownloadPayload):
     if not payload.cv_text:
@@ -188,54 +195,40 @@ async def download_pdf(payload: DownloadPayload):
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
     styles = getSampleStyleSheet()
     
-    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#1f2937', spaceAfter=5)
-    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=22, leading=26, textColor='#111827', spaceBefore=5, spaceAfter=8, alignment=1)
-    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=12, leading=16, textColor='#1e40af', spaceBefore=14, spaceAfter=6)
+    # Configure production-ready structural canvas metrics
+    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#374151', spaceAfter=5)
+    contact_style = ParagraphStyle('CV_Contact', parent=styles['Normal'], fontName='Helvetica', fontSize=9.5, leading=14, textColor='#4b5563', alignment=1, spaceAfter=10)
+    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor='#111827', spaceBefore=5, spaceAfter=6, alignment=1)
+    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=13, leading=17, textColor='#1e40af', spaceBefore=12, spaceAfter=6, keepWithNext=True)
+    h3_style = ParagraphStyle('CV_H3', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11, leading=15, textColor='#111827', spaceBefore=6, spaceAfter=3, keepWithNext=True)
 
     story = []
+    raw_lines = payload.cv_text.splitlines()
     
-    # 1. First convert markdown line breaks natively to safe double-spaces
-    padded_markdown = payload.cv_text.replace('\n', '  \n')
-    raw_html = markdown.markdown(padded_markdown)
-    
-    # 2. Map standard strong and link syntax to ReportLab tags inside raw HTML text string
-    raw_html = raw_html.replace('<strong>', '<b>').replace('</strong>', '</b>')
-    raw_html = raw_html.replace('<em>', '<i>').replace('</em>', '</i>')
-    
-    soup = BeautifulSoup(raw_html, "html.parser")
-    
-    # 3. Dynamic tag generator loop: processes clean rich HTML elements straight into Flowables
-    for element in soup.children:
-        if not element.name:
+    for raw_line in raw_lines:
+        line = raw_line.strip()
+        if not line:
             continue
             
-        # Re-encode content strings to make inline HTML layouts selectable by ReportLab paragraph engine
-        inner_html = "".join([str(child) for child in element.children]).strip()
-        if not inner_html:
-            inner_html = element.get_text().strip()
-            
-        if element.name == 'h1':
-            story.append(Paragraph(inner_html, h1_style))
+        if line.startswith('# '):
+            story.append(Paragraph(md_to_reportlab_html(line[2:].strip()), h1_style))
             story.append(Spacer(1, 4))
-        elif element.name == 'h2' or element.name == 'h3':
-            story.append(Paragraph(inner_html, h2_style))
-        elif element.name == 'p':
-            # Handle split checks for inline bullet tokens inside standard paragraph blocks
-            lines = [l.strip() for l in inner_html.split('<br/>') if l.strip()]
-            for line in lines:
-                if line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
-                    b_clean = line[2:].strip()
-                    story.append(ListFlowable([ListItem(Paragraph(b_clean, body_style), leftIndent=12)], bulletType='bullet', start='circle', leftIndent=8, spaceAfter=4))
-                else:
-                    story.append(Paragraph(line, body_style))
-        elif element.name in ['ul', 'ol']:
-            list_items = []
-            for li in element.find_all('li'):
-                li_html = "".join([str(c) for c in li.children]).strip() or li.get_text().strip()
-                if li_html:
-                    list_items.append(ListItem(Paragraph(li_html, body_style), leftIndent=12, bulletOffsetY=-1))
-            if list_items:
-                story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=5))
+        elif line.startswith('## '):
+            story.append(Paragraph(md_to_reportlab_html(line[3:].strip()), h2_style))
+        elif line.startswith('### '):
+            story.append(Paragraph(md_to_reportlab_html(line[4:].strip()), h3_style))
+        elif line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
+            bullet_clean = line[2:].strip()
+            if bullet_clean:
+                bullet_item = ListItem(Paragraph(md_to_reportlab_html(bullet_clean), body_style), leftIndent=12, bulletOffsetY=-1)
+                story.append(ListFlowable([bullet_item], bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=4, leftIndent=8, spaceAfter=3))
+        else:
+            translated_text = md_to_reportlab_html(line)
+            # Route text containing standard contact tokens to center-aligned layout blocks
+            if '@' in line or '|' in line or 'phone:' in line.lower() or 'email:' in line.lower():
+                story.append(Paragraph(translated_text, contact_style))
+            else:
+                story.append(Paragraph(translated_text, body_style))
                 
     try:
         doc.build(story)
