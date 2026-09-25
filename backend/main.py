@@ -193,24 +193,49 @@ async def download_pdf(payload: DownloadPayload):
     h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=12, leading=16, textColor='#1e40af', spaceBefore=14, spaceAfter=6)
 
     story = []
-    raw_lines = payload.cv_text.splitlines()
-    for raw_line in raw_lines:
-        line = raw_line.strip()
-        if not line:
+    
+    # 1. First convert markdown line breaks natively to safe double-spaces
+    padded_markdown = payload.cv_text.replace('\n', '  \n')
+    raw_html = markdown.markdown(padded_markdown)
+    
+    # 2. Map standard strong and link syntax to ReportLab tags inside raw HTML text string
+    raw_html = raw_html.replace('<strong>', '<b>').replace('</strong>', '</b>')
+    raw_html = raw_html.replace('<em>', '<i>').replace('</em>', '</i>')
+    
+    soup = BeautifulSoup(raw_html, "html.parser")
+    
+    # 3. Dynamic tag generator loop: processes clean rich HTML elements straight into Flowables
+    for element in soup.children:
+        if not element.name:
             continue
             
-        if line.startswith('# '):
-            story.append(Paragraph(line[2:].strip(), h1_style))
+        # Re-encode content strings to make inline HTML layouts selectable by ReportLab paragraph engine
+        inner_html = "".join([str(child) for child in element.children]).strip()
+        if not inner_html:
+            inner_html = element.get_text().strip()
+            
+        if element.name == 'h1':
+            story.append(Paragraph(inner_html, h1_style))
             story.append(Spacer(1, 4))
-        elif line.startswith('## '):
-            story.append(Paragraph(line[3:].strip(), h2_style))
-        elif line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
-            bullet_clean = line[2:].strip()
-            if bullet_clean:
-                bullet_item = ListItem(Paragraph(bullet_clean, body_style), leftIndent=12, bulletOffsetY=-1)
-                story.append(ListFlowable([bullet_item], bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=4))
-        else:
-            story.append(Paragraph(line, body_style))
+        elif element.name == 'h2' or element.name == 'h3':
+            story.append(Paragraph(inner_html, h2_style))
+        elif element.name == 'p':
+            # Handle split checks for inline bullet tokens inside standard paragraph blocks
+            lines = [l.strip() for l in inner_html.split('<br/>') if l.strip()]
+            for line in lines:
+                if line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
+                    b_clean = line[2:].strip()
+                    story.append(ListFlowable([ListItem(Paragraph(b_clean, body_style), leftIndent=12)], bulletType='bullet', start='circle', leftIndent=8, spaceAfter=4))
+                else:
+                    story.append(Paragraph(line, body_style))
+        elif element.name in ['ul', 'ol']:
+            list_items = []
+            for li in element.find_all('li'):
+                li_html = "".join([str(c) for c in li.children]).strip() or li.get_text().strip()
+                if li_html:
+                    list_items.append(ListItem(Paragraph(li_html, body_style), leftIndent=12, bulletOffsetY=-1))
+            if list_items:
+                story.append(ListFlowable(list_items, bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=5))
                 
     try:
         doc.build(story)
