@@ -34,7 +34,7 @@ app.add_middleware(
 api_key = os.getenv("GROQ_API_KEY")
 agent_brain = None
 if api_key and not api_key.startswith("your_"):
-    agent_brain = ChatGroq(model="openai/gpt-oss-120b", temperature=0.2)
+    agent_brain = ChatGroq(model="llama3-70b-8192", temperature=0.2)
 
 class ChatPayload(BaseModel):
     message: str
@@ -59,7 +59,7 @@ def fallback_clean_text(raw_text):
     lines = [line.strip() for line in clean.splitlines() if line.strip()]
     formatted_lines = []
     for line in lines:
-        if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary"]):
+        if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary", "Technical Skills", "Languages", "Military Service"]):
             formatted_lines.append(f"\n## {line}\n")
         elif "Gal Peter" in line:
             formatted_lines.append(f"# {line}\n")
@@ -144,7 +144,6 @@ async def upload_cv(file: UploadFile = File(...)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/chat")
 async def chat_with_agent(payload: ChatPayload):
     if not payload.cv_text:
@@ -185,7 +184,6 @@ def md_to_reportlab_html(text_data):
     text_data = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text_data)
     text_data = re.sub(r'\[(.*?)\]\((.*?)\)', r'<font color="#1e40af"><u>\1</u></font>', text_data)
     return text_data
-
 @app.post("/download")
 async def download_pdf(payload: DownloadPayload):
     if not payload.cv_text:
@@ -203,23 +201,25 @@ async def download_pdf(payload: DownloadPayload):
 
     story = []
     raw_lines = payload.cv_text.splitlines()
+    core_headers = ["summary", "professional summary", "professional experience", "experience", "education", "military service", "skills", "technical skills", "languages"]
     
     for raw_line in raw_lines:
         line = raw_line.strip()
         if not line:
             continue
             
-        # FIXED: Intercept horizontal markdown separators and draw structural divider lines instead of raw hyphens
         if line.startswith('---') or line.startswith('___'):
             story.append(Spacer(1, 4))
             story.append(HRFlowable(width="100%", thickness=1, color="#e5e7eb", spaceBefore=4, spaceAfter=8))
             continue
             
-        if line.startswith('# '):
+        clean_text_only = re.sub(r'^[#*\-\s•]+', '', line).strip()
+        
+        if line.startswith('## ') or (clean_text_only.lower() in core_headers and len(line) < 30 and not line.startswith('-')):
+            story.append(Paragraph(md_to_reportlab_html(clean_text_only), h2_style))
+        elif line.startswith('# '):
             story.append(Paragraph(md_to_reportlab_html(line[2:].strip()), h1_style))
             story.append(Spacer(1, 4))
-        elif line.startswith('## '):
-            story.append(Paragraph(md_to_reportlab_html(line[3:].strip()), h2_style))
         elif line.startswith('### '):
             story.append(Paragraph(md_to_reportlab_html(line[4:].strip()), h3_style))
         elif line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
