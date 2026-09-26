@@ -34,7 +34,8 @@ app.add_middleware(
 api_key = os.getenv("GROQ_API_KEY")
 agent_brain = None
 if api_key and not api_key.startswith("your_"):
-    agent_brain = ChatGroq(model="llama3-70b-8192", temperature=0.2)
+    # FIXED ENDPOINT: Swapped out deprecated string tag for the premium active production model link
+    agent_brain = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
 
 class ChatPayload(BaseModel):
     message: str
@@ -58,22 +59,19 @@ def fallback_clean_text(raw_text):
     clean = ultimate_unicode_cleaner(raw_text)
     lines = [line.strip() for line in clean.splitlines() if line.strip()]
     formatted_lines = []
+    
     for line in lines:
+        # Detect headers safely without breaking standard paragraphs apart
         if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary", "Technical Skills", "Languages", "Military Service"]):
             formatted_lines.append(f"\n## {line}\n")
         elif "Gal Peter" in line:
             formatted_lines.append(f"# {line}\n")
+        elif line.startswith('-') or line.startswith('•') or line.startswith('●'):
+            formatted_lines.append(f"- {line.lstrip('-•● ').strip()}")
         else:
-            if " - " in line or ". " in line:
-                sub_sentences = re.split(r'(?<=\.)\s+|\s+-\s+', line)
-                for sentence in sub_sentences:
-                    s_clean = sentence.strip().lstrip('-').strip()
-                    if s_clean and len(s_clean) > 10:
-                        formatted_lines.append(f"- {s_clean}")
-            elif len(line) > 30 and not line.endswith(":") and not "|" in line:
-                formatted_lines.append(f"- {line}")
-            else:
-                formatted_lines.append(line)
+            # FIXED: Preserves standard text streams cleanly instead of aggressively breaking sentences into bullet loops
+            formatted_lines.append(line)
+            
     return "\n".join(formatted_lines).strip()
 
 @app.get("/")
@@ -184,6 +182,7 @@ def md_to_reportlab_html(text_data):
     text_data = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text_data)
     text_data = re.sub(r'\[(.*?)\]\((.*?)\)', r'<font color="#1e40af"><u>\1</u></font>', text_data)
     return text_data
+
 @app.post("/download")
 async def download_pdf(payload: DownloadPayload):
     if not payload.cv_text:
@@ -213,7 +212,7 @@ async def download_pdf(payload: DownloadPayload):
             story.append(HRFlowable(width="100%", thickness=1, color="#e5e7eb", spaceBefore=4, spaceAfter=8))
             continue
             
-        clean_text_only = re.sub(r'^[#*\-\s•]+', '', line).strip()
+        clean_text_only = re.sub(r'^[#*\-\s•●]+', '', line).strip()
         
         if line.startswith('## ') or (clean_text_only.lower() in core_headers and len(line) < 30 and not line.startswith('-')):
             story.append(Paragraph(md_to_reportlab_html(clean_text_only), h2_style))
@@ -222,8 +221,8 @@ async def download_pdf(payload: DownloadPayload):
             story.append(Spacer(1, 4))
         elif line.startswith('### '):
             story.append(Paragraph(md_to_reportlab_html(line[4:].strip()), h3_style))
-        elif line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
-            bullet_clean = line[2:].strip()
+        elif line.startswith('- ') or line.startswith('* ') or line.startswith('• ') or line.startswith('● '):
+            bullet_clean = re.sub(r'^[#*\-\s•●]+', '', line).strip()
             if bullet_clean:
                 bullet_item = ListItem(Paragraph(md_to_reportlab_html(bullet_clean), body_style), leftIndent=12, bulletOffsetY=-1)
                 story.append(ListFlowable([bullet_item], bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=4, leftIndent=8, spaceAfter=3))
