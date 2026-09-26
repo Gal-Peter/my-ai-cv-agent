@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
+from reportlab.platypus.flowables import HRFlowable
 
 load_dotenv()
 
@@ -180,7 +181,6 @@ async def chat_with_agent(payload: ChatPayload):
         return {"status": "success", "agent_response": modified_text.strip()}
 
 def md_to_reportlab_html(text_data):
-    # Transform syntax tokens explicitly into ReportLab supported inline formatting tags
     text_data = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text_data)
     text_data = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text_data)
     text_data = re.sub(r'\[(.*?)\]\((.*?)\)', r'<font color="#1e40af"><u>\1</u></font>', text_data)
@@ -195,9 +195,8 @@ async def download_pdf(payload: DownloadPayload):
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
     styles = getSampleStyleSheet()
     
-    # Configure production-ready structural canvas metrics
     body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#374151', spaceAfter=5)
-    contact_style = ParagraphStyle('CV_Contact', parent=styles['Normal'], fontName='Helvetica', fontSize=9.5, leading=14, textColor='#4b5563', alignment=1, spaceAfter=10)
+    contact_style = ParagraphStyle('CV_Contact', parent=styles['Normal'], fontName='Helvetica', fontSize=9.5, leading=14, textColor='#4b5563', alignment=1, spaceAfter=4)
     h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor='#111827', spaceBefore=5, spaceAfter=6, alignment=1)
     h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=13, leading=17, textColor='#1e40af', spaceBefore=12, spaceAfter=6, keepWithNext=True)
     h3_style = ParagraphStyle('CV_H3', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11, leading=15, textColor='#111827', spaceBefore=6, spaceAfter=3, keepWithNext=True)
@@ -208,6 +207,12 @@ async def download_pdf(payload: DownloadPayload):
     for raw_line in raw_lines:
         line = raw_line.strip()
         if not line:
+            continue
+            
+        # FIXED: Intercept horizontal markdown separators and draw structural divider lines instead of raw hyphens
+        if line.startswith('---') or line.startswith('___'):
+            story.append(Spacer(1, 4))
+            story.append(HRFlowable(width="100%", thickness=1, color="#e5e7eb", spaceBefore=4, spaceAfter=8))
             continue
             
         if line.startswith('# '):
@@ -224,7 +229,6 @@ async def download_pdf(payload: DownloadPayload):
                 story.append(ListFlowable([bullet_item], bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=4, leftIndent=8, spaceAfter=3))
         else:
             translated_text = md_to_reportlab_html(line)
-            # Route text containing standard contact tokens to center-aligned layout blocks
             if '@' in line or '|' in line or 'phone:' in line.lower() or 'email:' in line.lower():
                 story.append(Paragraph(translated_text, contact_style))
             else:
