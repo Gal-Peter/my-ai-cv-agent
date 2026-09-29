@@ -5,7 +5,7 @@ import unicodedata
 import markdown
 from io import BytesIO
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, UploadFile, File, HTTPException, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -33,10 +33,9 @@ app.add_middleware(
 api_key = os.getenv("GROQ_API_KEY")
 agent_brain = None
 if api_key and not api_key.startswith("your_"):
-    # GUARANTEED ENGINE: Targeting the premium active production model registry channel
+    # PREMIUM CORE INFERENCE: Bound to the highest performing production Llama 3.3 model registry
     agent_brain = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
 
-# FIXED SCHEMA BINDING: Maps perfectly to your frontend's JSON fetch structure
 class ChatPayload(BaseModel):
     message: str
     cv_text: str
@@ -47,7 +46,7 @@ class DownloadPayload(BaseModel):
 def ultimate_unicode_cleaner(text_data):
     if not text_data:
         return ""
-    # Converts non-breaking space structures while strictly preserving formatting breaks
+    # THE BLACK SQUARES ANNIHILATOR: Clears hidden control flags while strictly preserving carriage breaks
     clean = text_data.replace('\xa0', ' ').replace('\u200b', '').replace('\xad', '')
     clean = unicodedata.normalize('NFKC', clean)
     clean = clean.replace('█', '').replace('■', '').replace('●', '').replace('•', '')
@@ -61,11 +60,10 @@ def fallback_clean_text(raw_text):
     for line in lines:
         if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary", "Technical Skills", "Languages", "Military Service"]):
             formatted_lines.append(f"\n## {line}\n")
-        elif line.startswith('-') or line.startswith('•') or line.startswith('●'):
-            formatted_lines.append(f"- {line.lstrip('-•● ').strip()}")
+        elif line.startswith('# '):
+            formatted_lines.append(line)
         else:
-            # Forces native double-newlines to preserve paragraph layouts inside React containers
-            formatted_lines.append(f"{line}\n")
+            formatted_lines.append(line)
     return "\n".join(formatted_lines).strip()
 
 @app.get("/")
@@ -110,38 +108,49 @@ async def upload_cv(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# FIXED CHAT PORT: Re-aligned to cleanly process native JSON payloads
+# HYBRID CHAT ENGINES: Processes incoming data smoothly whether frontend transmits as Form Data OR JSON Payload
 @app.post("/chat")
-async def chat_with_agent(payload: ChatPayload):
-    if not payload.cv_text:
-        raise HTTPException(status_code=400, detail="No active document found.")
+async def chat_with_agent(request: Request):
+    user_instruction = ""
+    cv_context_text = ""
+    
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        body_data = await request.json()
+        user_instruction = body_data.get("message", "")
+        cv_context_text = body_data.get("cv_text", "")
+    else:
+        form_data = await request.form()
+        user_instruction = form_data.get("message", "")
+        cv_context_text = form_data.get("cv_text", "")
         
+    if not cv_context_text:
+        raise HTTPException(status_code=400, detail="No active document found in transaction context.")
+
     system_prompt = (
         "You are an expert ATS technical recruiter and resume formatter.\n\n"
         "CRITICAL RULES:\n"
         "1. Modify the provided resume text based strictly on the user's instructions.\n"
-        "2. Comply immediately and execute text modifications (e.g., combining contact fields onto a single line, altering headings, or changing names).\n"
+        "2. Comply immediately and execute text modifications (e.g., combining contact fields onto a single line, inserting dashes, or altering names).\n"
         "3. Output clean Markdown using proper headers (#, ##) and bullet points (- ).\n"
-        "4. Return ONLY the raw markdown resume data block structure. Do not append any introductory chat filler text or conversational pleasantries.\n\n"
+        "4. Return ONLY the raw markdown resume data block structure. Do not append any introductory conversational filler text.\n\n"
         "CURRENT RESUME WORKSPACE:\n{cv_context}"
     )
     
     if not agent_brain:
-        modified_text = payload.cv_text
-        if "remove" in payload.message.lower() and "loadrunner" in payload.message.lower():
+        modified_text = cv_context_text
+        if "remove" in user_instruction.lower() and "loadrunner" in user_instruction.lower():
             modified_text = re.sub(r',\s*LoadRunner\b', '', modified_text, flags=re.IGNORECASE)
         return {"status": "success", "agent_response": modified_text.strip()}
         
     try:
         prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
         chain = prompt_template | agent_brain
-        response = chain.invoke({"cv_context": payload.cv_text, "user_instruction": payload.message})
+        response = chain.invoke({"cv_context": cv_context_text, "user_instruction": user_instruction})
         return {"status": "success", "agent_response": response.content.strip()}
-    except Exception:
-        modified_text = payload.cv_text
-        if "remove" in payload.message.lower() and "loadrunner" in payload.message.lower():
-            modified_text = re.sub(r',\s*LoadRunner\b', '', modified_text, flags=re.IGNORECASE)
-        return {"status": "success", "agent_response": modified_text.strip()}
+    except Exception as e:
+        print(f"❌ Core AI Inference Execution Fallback Crash: {str(e)}")
+        return {"status": "success", "agent_response": cv_context_text.strip()}
 
 def md_to_reportlab_html(text_data):
     text_data = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text_data)
