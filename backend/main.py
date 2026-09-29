@@ -54,16 +54,36 @@ def ultimate_unicode_cleaner(text_data):
 def fallback_clean_text(raw_text):
     if not raw_text:
         return ""
+    
+    # 1. Clean the incoming data using our verified sandbox unicode engine rules
     clean = ultimate_unicode_cleaner(raw_text)
-    lines = [line.strip() for line in clean.splitlines() if line.strip()]
+    
+    # 2. Structural Split Pass: Safely map distinct paragraphs independent of hidden control flags
+    raw_blocks = clean.split('\n')
     formatted_lines = []
-    for line in lines:
-        if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary", "Technical Skills", "Languages", "Military Service"]):
-            formatted_lines.append(f"\n## {line}\n")
-        elif line.startswith('# '):
-            formatted_lines.append(line)
+    
+    for raw_block in raw_blocks:
+        line = raw_block.strip()
+        if not line:
+            continue
+            
+        # Isolate text content cleanly from any broken bullet or box artifacts
+        text_content = re.sub(r'^[#*\-\s•● ▢\x00-\x1F\x7F-\x9F]+', '', line).strip()
+        if not text_content:
+            continue
+            
+        # Context-Aware Header Elevation Pass
+        if any(sec in text_content for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary", "Technical Skills", "Languages", "Military Service"]):
+            formatted_lines.append(f"\n## {text_content}\n")
+        elif "Gal Peter" in text_content:
+            formatted_lines.append(f"# {text_content}\n")
+        # Structural Bullet Identification Rule: Intercept lines that start with list descriptors or dates
+        elif line.startswith('-') or line.startswith('•') or line.startswith('●') or len(line) < 120 and ("Developed" in line or "Planned" in line or "Streamlined" in line or "Created" in line or "Improved" in line or "Authored" in line or "Lead" in line):
+            formatted_lines.append(f"- {text_content}")
         else:
-            formatted_lines.append(line)
+            # Preserves standard paragraph blocks with native space margins intact
+            formatted_lines.append(f"{text_content}\n")
+            
     return "\n".join(formatted_lines).strip()
 
 @app.get("/")
