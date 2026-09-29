@@ -33,8 +33,8 @@ app.add_middleware(
 api_key = os.getenv("GROQ_API_KEY")
 agent_brain = None
 if api_key and not api_key.startswith("your_"):
-    # Target the rock-solid, globally available production inference model
-    agent_brain = ChatGroq(model="llama3-8b-8192", temperature=0.2)
+    # FIXED: Migrated from legacy tag to the universally active production inference endpoint
+    agent_brain = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
 
 # FIXED CORE MATRIX: Pydantic schemas mapped perfectly to your rolled-back React client calls
 class ChatPayload(BaseModel):
