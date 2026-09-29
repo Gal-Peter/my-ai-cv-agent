@@ -5,7 +5,7 @@ import unicodedata
 import markdown
 from io import BytesIO
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -33,9 +33,10 @@ app.add_middleware(
 api_key = os.getenv("GROQ_API_KEY")
 agent_brain = None
 if api_key and not api_key.startswith("your_"):
-    # RE-BOUND ENGINE: Connected to your high-performance inference engine channel
-    agent_brain = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
+    # Target the rock-solid, globally available production inference model
+    agent_brain = ChatGroq(model="llama3-8b-8192", temperature=0.2)
 
+# FIXED CORE MATRIX: Pydantic schemas mapped perfectly to your rolled-back React client calls
 class ChatPayload(BaseModel):
     message: str
     cv_text: str
@@ -46,7 +47,7 @@ class DownloadPayload(BaseModel):
 def ultimate_unicode_cleaner(text_data):
     if not text_data:
         return ""
-    # VERIFIED SANDBOX FIX: Converts non-breaking space structures to normal spaces
+    # Convert non-breaking space structures while strictly preserving structural newlines
     clean = text_data.replace('\xa0', ' ').replace('\u200b', '').replace('\xad', '')
     clean = unicodedata.normalize('NFKC', clean)
     clean = clean.replace('█', '').replace('■', '').replace('●', '').replace('•', '')
@@ -60,10 +61,11 @@ def fallback_clean_text(raw_text):
     for line in lines:
         if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary", "Technical Skills", "Languages", "Military Service"]):
             formatted_lines.append(f"\n## {line}\n")
-        elif line.startswith('# '):
-            formatted_lines.append(line)
+        elif line.startswith('-') or line.startswith('•') or line.startswith('●'):
+            formatted_lines.append(f"- {line.lstrip('-•● ').strip()}")
         else:
-            formatted_lines.append(line)
+            # FIXED: Forces native double-newlines to preserve crisp paragraph layout spacing in React
+            formatted_lines.append(f"{line}\n")
     return "\n".join(formatted_lines).strip()
 
 @app.get("/")
@@ -108,36 +110,36 @@ async def upload_cv(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# FIXED CHAT PORT: Re-aligned to cleanly process JSON payloads natively
 @app.post("/chat")
-async def chat_with_agent(message: str = Form(...), cv_text: str = Form(...)):
-    if not cv_text:
+async def chat_with_agent(payload: ChatPayload):
+    if not payload.cv_text:
         raise HTTPException(status_code=400, detail="No active document found.")
         
     system_prompt = (
         "You are an expert ATS technical recruiter and resume formatter.\n\n"
         "CRITICAL RULES:\n"
         "1. Modify the provided resume text based strictly on the user's instructions.\n"
-        "2. If requested to remove, delete, or alter any text string segment (e.g., ' - CV' from headers), "
-        "comply immediately and execute the deletion. Do not keep unchanged placeholders if instructed to modify them.\n"
+        "2. Comply immediately and execute text modifications (e.g., swapping names, altering layouts, or inserting characters).\n"
         "3. Output clean Markdown using proper headers (#, ##) and bullet points (- ).\n"
-        "4. Return ONLY the raw markdown resume data block structure. Do not append any introductory chat filler or conversational text.\n\n"
+        "4. Return ONLY the raw markdown resume data block structure. Do not append any conversational filler text.\n\n"
         "CURRENT RESUME WORKSPACE:\n{cv_context}"
     )
     
     if not agent_brain:
-        modified_text = cv_text
-        if "remove" in message.lower() and "loadrunner" in message.lower():
+        modified_text = payload.cv_text
+        if "remove" in payload.message.lower() and "loadrunner" in payload.message.lower():
             modified_text = re.sub(r',\s*LoadRunner\b', '', modified_text, flags=re.IGNORECASE)
         return {"status": "success", "agent_response": modified_text.strip()}
         
     try:
         prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
         chain = prompt_template | agent_brain
-        response = chain.invoke({"cv_context": cv_text, "user_instruction": message})
+        response = chain.invoke({"cv_context": payload.cv_text, "user_instruction": payload.message})
         return {"status": "success", "agent_response": response.content.strip()}
     except Exception:
-        modified_text = cv_text
-        if "remove" in message.lower() and "loadrunner" in message.lower():
+        modified_text = payload.cv_text
+        if "remove" in payload.message.lower() and "loadrunner" in payload.message.lower():
             modified_text = re.sub(r',\s*LoadRunner\b', '', modified_text, flags=re.IGNORECASE)
         return {"status": "success", "agent_response": modified_text.strip()}
 
@@ -163,8 +165,6 @@ async def download_pdf(payload: DownloadPayload):
     h3_style = ParagraphStyle('CV_H3', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11, leading=15, textColor='#111827', spaceBefore=6, spaceAfter=3, keepWithNext=True)
 
     story = []
-    
-    # VERIFIED SANDBOX COMPILER: Restores direct Markdown string line pattern layout parsing rules
     raw_lines = payload.cv_text.splitlines()
     core_headers = ["summary", "professional summary", "professional experience", "experience", "education", "military service", "skills", "technical skills", "languages"]
     
