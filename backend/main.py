@@ -33,10 +33,10 @@ app.add_middleware(
 api_key = os.getenv("GROQ_API_KEY")
 agent_brain = None
 if api_key and not api_key.startswith("your_"):
-    # FIXED: Migrated from legacy tag to the universally active production inference endpoint
+    # GUARANTEED ENGINE: Targeting the premium active production model registry channel
     agent_brain = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
 
-# FIXED CORE MATRIX: Pydantic schemas mapped perfectly to your rolled-back React client calls
+# FIXED SCHEMA BINDING: Maps perfectly to your frontend's JSON fetch structure
 class ChatPayload(BaseModel):
     message: str
     cv_text: str
@@ -47,7 +47,7 @@ class DownloadPayload(BaseModel):
 def ultimate_unicode_cleaner(text_data):
     if not text_data:
         return ""
-    # Convert non-breaking space structures while strictly preserving structural newlines
+    # Converts non-breaking space structures while strictly preserving formatting breaks
     clean = text_data.replace('\xa0', ' ').replace('\u200b', '').replace('\xad', '')
     clean = unicodedata.normalize('NFKC', clean)
     clean = clean.replace('█', '').replace('■', '').replace('●', '').replace('•', '')
@@ -64,7 +64,7 @@ def fallback_clean_text(raw_text):
         elif line.startswith('-') or line.startswith('•') or line.startswith('●'):
             formatted_lines.append(f"- {line.lstrip('-•● ').strip()}")
         else:
-            # FIXED: Forces native double-newlines to preserve crisp paragraph layout spacing in React
+            # Forces native double-newlines to preserve paragraph layouts inside React containers
             formatted_lines.append(f"{line}\n")
     return "\n".join(formatted_lines).strip()
 
@@ -110,7 +110,7 @@ async def upload_cv(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# FIXED CHAT PORT: Re-aligned to cleanly process JSON payloads natively
+# FIXED CHAT PORT: Re-aligned to cleanly process native JSON payloads
 @app.post("/chat")
 async def chat_with_agent(payload: ChatPayload):
     if not payload.cv_text:
@@ -120,9 +120,9 @@ async def chat_with_agent(payload: ChatPayload):
         "You are an expert ATS technical recruiter and resume formatter.\n\n"
         "CRITICAL RULES:\n"
         "1. Modify the provided resume text based strictly on the user's instructions.\n"
-        "2. Comply immediately and execute text modifications (e.g., swapping names, altering layouts, or inserting characters).\n"
+        "2. Comply immediately and execute text modifications (e.g., combining contact fields onto a single line, altering headings, or changing names).\n"
         "3. Output clean Markdown using proper headers (#, ##) and bullet points (- ).\n"
-        "4. Return ONLY the raw markdown resume data block structure. Do not append any conversational filler text.\n\n"
+        "4. Return ONLY the raw markdown resume data block structure. Do not append any introductory chat filler text or conversational pleasantries.\n\n"
         "CURRENT RESUME WORKSPACE:\n{cv_context}"
     )
     
