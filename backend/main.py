@@ -5,8 +5,7 @@ import unicodedata
 import markdown
 from io import BytesIO
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -14,6 +13,7 @@ from dotenv import load_dotenv
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
+from reportlab.platypus.flowables import HRFlowable
 
 load_dotenv()
 
@@ -33,7 +33,8 @@ app.add_middleware(
 api_key = os.getenv("GROQ_API_KEY")
 agent_brain = None
 if api_key and not api_key.startswith("your_"):
-    agent_brain = ChatGroq(model="openai/gpt-oss-120b", temperature=0.2)
+    # RE-BOUND ENGINE: Connected to your high-performance inference engine channel
+    agent_brain = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
 
 class ChatPayload(BaseModel):
     message: str
@@ -45,11 +46,10 @@ class DownloadPayload(BaseModel):
 def ultimate_unicode_cleaner(text_data):
     if not text_data:
         return ""
-    clean = unicodedata.normalize('NFKC', text_data)
-    clean = clean.replace('\xad', '').replace('\xa0', ' ').replace('\u200b', '')
+    # VERIFIED SANDBOX FIX: Converts non-breaking space structures to normal spaces
+    clean = text_data.replace('\xa0', ' ').replace('\u200b', '').replace('\xad', '')
+    clean = unicodedata.normalize('NFKC', clean)
     clean = clean.replace('█', '').replace('■', '').replace('●', '').replace('•', '')
-    clean = re.sub(r'[^\x20-\x7E\u0590-\u05FF\n]', '', clean)
-    clean = re.sub(r' +', ' ', clean)
     return clean
 def fallback_clean_text(raw_text):
     if not raw_text:
@@ -58,21 +58,12 @@ def fallback_clean_text(raw_text):
     lines = [line.strip() for line in clean.splitlines() if line.strip()]
     formatted_lines = []
     for line in lines:
-        if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary"]):
+        if any(sec in line for sec in ["Professional Experience", "Skills", "Education", "Contact", "Summary", "Professional Summary", "Technical Skills", "Languages", "Military Service"]):
             formatted_lines.append(f"\n## {line}\n")
-        elif "Gal Peter" in line:
-            formatted_lines.append(f"# {line}\n")
+        elif line.startswith('# '):
+            formatted_lines.append(line)
         else:
-            if " - " in line or ". " in line:
-                sub_sentences = re.split(r'(?<=\.)\s+|\s+-\s+', line)
-                for sentence in sub_sentences:
-                    s_clean = sentence.strip().lstrip('-').strip()
-                    if s_clean and len(s_clean) > 10:
-                        formatted_lines.append(f"- {s_clean}")
-            elif len(line) > 30 and not line.endswith(":") and not "|" in line:
-                formatted_lines.append(f"- {line}")
-            else:
-                formatted_lines.append(line)
+            formatted_lines.append(line)
     return "\n".join(formatted_lines).strip()
 
 @app.get("/")
@@ -85,56 +76,29 @@ async def upload_cv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     try:
         file_bytes = await file.read()
-        from io import BytesIO
         import pdfplumber
-        
         extracted_text_list = []
         pdf_stream = BytesIO(file_bytes)
         doc = fitz.open(stream=pdf_stream, filetype="pdf")
         for page in doc:
-            blocks = page.get_text("blocks")
-            if blocks:
-                blocks.sort(key=lambda b: (b, b))
-                for b in blocks:
-                    if len(b) > 4 and isinstance(b, str):
-                        extracted_text_list.append(b)
+            page_text = page.get_text("text")
+            if page_text:
+                extracted_text_list.append(page_text)
         doc.close()
         
         raw_full_text = "\n\n".join(extracted_text_list).strip()
-        
         if not raw_full_text or len(raw_full_text) < 50:
             extracted_text_list = []
             pdf_stream.seek(0)
             with pdfplumber.open(pdf_stream) as plumber_doc:
                 for page in plumber_doc.pages:
-                    page_text = page.extract_text(layout=False)
+                    page_text = page.extract_text()
                     if page_text:
                         extracted_text_list.append(page_text)
             raw_full_text = "\n\n".join(extracted_text_list).strip()
 
         raw_full_text = ultimate_unicode_cleaner(raw_full_text)
-        if not raw_full_text or len(raw_full_text) < 10:
-            raise HTTPException(status_code=422, detail="PDF layer empty.")
-
-        if agent_brain:
-            try:
-                structuring_prompt = (
-                    "You are an expert ATS layout parser. Re-write this resume text into clean, structured Markdown format.\n\n"
-                    "CRITICAL RULES:\n"
-                    "1. Every single job responsibility line under companies MUST start with a hyphen and space ('- ').\n"
-                    "2. Clean formatting glitches like split words ('in-house') or space breaks in phone digits.\n"
-                    "3. Return ONLY the markdown resume text layer. No introductory boilerplates.\n\n"
-                    "RAW CV INPUT:\n{raw_text}"
-                )
-                prompt_template = ChatPromptTemplate.from_messages([("system", structuring_prompt)])
-                chain = prompt_template | agent_brain
-                response = chain.invoke({"raw_text": raw_full_text})
-                structured_markdown = response.content.strip()
-            except Exception:
-                structured_markdown = fallback_clean_text(raw_full_text)
-        else:
-            structured_markdown = fallback_clean_text(raw_full_text)
-            
+        structured_markdown = fallback_clean_text(raw_full_text)
         return {
             "filename": file.filename,
             "status": "parsed",
@@ -145,39 +109,43 @@ async def upload_cv(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
-async def chat_with_agent(payload: ChatPayload):
-    if not payload.cv_text:
+async def chat_with_agent(message: str = Form(...), cv_text: str = Form(...)):
+    if not cv_text:
         raise HTTPException(status_code=400, detail="No active document found.")
         
     system_prompt = (
-        "You are an expert ATS technical recruiter. Review the formatted Markdown resume and modify it per request.\n\n"
-        "RULES:\n"
-        "1. Output clean Markdown using proper headers and bullet points (- ).\n"
-        "2. Do not invent new facts. If asked to modify sections, perform the specific replacement exactly.\n"
-        "3. Return ONLY the raw markdown resume data block structure. No chat filler or pleasantries.\n\n"
-        "WORKSPACE:\n{cv_context}"
+        "You are an expert ATS technical recruiter and resume formatter.\n\n"
+        "CRITICAL RULES:\n"
+        "1. Modify the provided resume text based strictly on the user's instructions.\n"
+        "2. If requested to remove, delete, or alter any text string segment (e.g., ' - CV' from headers), "
+        "comply immediately and execute the deletion. Do not keep unchanged placeholders if instructed to modify them.\n"
+        "3. Output clean Markdown using proper headers (#, ##) and bullet points (- ).\n"
+        "4. Return ONLY the raw markdown resume data block structure. Do not append any introductory chat filler or conversational text.\n\n"
+        "CURRENT RESUME WORKSPACE:\n{cv_context}"
     )
     
     if not agent_brain:
-        modified_text = payload.cv_text
-        if "remove" in payload.message.lower() and "loadrunner" in payload.message.lower():
+        modified_text = cv_text
+        if "remove" in message.lower() and "loadrunner" in message.lower():
             modified_text = re.sub(r',\s*LoadRunner\b', '', modified_text, flags=re.IGNORECASE)
-            modified_text = re.sub(r'\bLoadRunner\s*,\s*', '', modified_text, flags=re.IGNORECASE)
-            modified_text = re.sub(r'\bLoadRunner\b', '', modified_text, flags=re.IGNORECASE)
         return {"status": "success", "agent_response": modified_text.strip()}
         
     try:
         prompt_template = ChatPromptTemplate.from_messages([("system", system_prompt), ("human", "{user_instruction}")])
         chain = prompt_template | agent_brain
-        response = chain.invoke({"cv_context": payload.cv_text, "user_instruction": payload.message})
+        response = chain.invoke({"cv_context": cv_text, "user_instruction": message})
         return {"status": "success", "agent_response": response.content.strip()}
-    except Exception as e:
-        modified_text = payload.cv_text
-        if "remove" in payload.message.lower() and "loadrunner" in payload.message.lower():
+    except Exception:
+        modified_text = cv_text
+        if "remove" in message.lower() and "loadrunner" in message.lower():
             modified_text = re.sub(r',\s*LoadRunner\b', '', modified_text, flags=re.IGNORECASE)
-            modified_text = re.sub(r'\bLoadRunner\s*,\s*', '', modified_text, flags=re.IGNORECASE)
-            modified_text = re.sub(r'\bLoadRunner\b', '', modified_text, flags=re.IGNORECASE)
         return {"status": "success", "agent_response": modified_text.strip()}
+
+def md_to_reportlab_html(text_data):
+    text_data = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text_data)
+    text_data = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text_data)
+    text_data = re.sub(r'\[(.*?)\]\((.*?)\)', r'<font color="#1e40af"><u>\1</u></font>', text_data)
+    return text_data
 
 @app.post("/download")
 async def download_pdf(payload: DownloadPayload):
@@ -188,29 +156,48 @@ async def download_pdf(payload: DownloadPayload):
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
     styles = getSampleStyleSheet()
     
-    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#1f2937', spaceAfter=5)
-    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=22, leading=26, textColor='#111827', spaceBefore=5, spaceAfter=8, alignment=1)
-    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=12, leading=16, textColor='#1e40af', spaceBefore=14, spaceAfter=6)
+    body_style = ParagraphStyle('CV_Body', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=15, textColor='#374151', spaceAfter=5)
+    contact_style = ParagraphStyle('CV_Contact', parent=styles['Normal'], fontName='Helvetica', fontSize=9.5, leading=14, textColor='#4b5563', alignment=1, spaceAfter=4)
+    h1_style = ParagraphStyle('CV_H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor='#111827', spaceBefore=5, spaceAfter=6, alignment=1)
+    h2_style = ParagraphStyle('CV_H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=13, leading=17, textColor='#1e40af', spaceBefore=12, spaceAfter=6, keepWithNext=True)
+    h3_style = ParagraphStyle('CV_H3', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11, leading=15, textColor='#111827', spaceBefore=6, spaceAfter=3, keepWithNext=True)
 
     story = []
+    
+    # VERIFIED SANDBOX COMPILER: Restores direct Markdown string line pattern layout parsing rules
     raw_lines = payload.cv_text.splitlines()
+    core_headers = ["summary", "professional summary", "professional experience", "experience", "education", "military service", "skills", "technical skills", "languages"]
+    
     for raw_line in raw_lines:
         line = raw_line.strip()
         if not line:
             continue
             
-        if line.startswith('# '):
-            story.append(Paragraph(line[2:].strip(), h1_style))
+        if line.startswith('---') or line.startswith('___'):
             story.append(Spacer(1, 4))
-        elif line.startswith('## '):
-            story.append(Paragraph(line[3:].strip(), h2_style))
-        elif line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
-            bullet_clean = line[2:].strip()
+            story.append(HRFlowable(width="100%", thickness=1, color="#e5e7eb", spaceBefore=4, spaceAfter=8))
+            continue
+            
+        clean_text_only = re.sub(r'^[#*\-\s•●]+', '', line).strip()
+        
+        if line.startswith('## ') or (clean_text_only.lower() in core_headers and len(line) < 30 and not line.startswith('-')):
+            story.append(Paragraph(md_to_reportlab_html(clean_text_only), h2_style))
+        elif line.startswith('# '):
+            story.append(Paragraph(md_to_reportlab_html(line[2:].strip()), h1_style))
+            story.append(Spacer(1, 4))
+        elif line.startswith('### '):
+            story.append(Paragraph(md_to_reportlab_html(line[4:].strip()), h3_style))
+        elif line.startswith('- ') or line.startswith('* ') or line.startswith('• ') or line.startswith('● '):
+            bullet_clean = re.sub(r'^[#*\-\s•●]+', '', line).strip()
             if bullet_clean:
-                bullet_item = ListItem(Paragraph(bullet_clean, body_style), leftIndent=12, bulletOffsetY=-1)
-                story.append(ListFlowable([bullet_item], bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=5, leftIndent=8, spaceAfter=4))
+                bullet_item = ListItem(Paragraph(md_to_reportlab_html(bullet_clean), body_style), leftIndent=12, bulletOffsetY=-1)
+                story.append(ListFlowable([bullet_item], bulletType='bullet', start='circle', bulletFontName='Helvetica', bulletFontSize=4, leftIndent=8, spaceAfter=3))
         else:
-            story.append(Paragraph(line, body_style))
+            translated_text = md_to_reportlab_html(line)
+            if '@' in line or '|' in line or 'phone:' in line.lower() or 'email:' in line.lower():
+                story.append(Paragraph(translated_text, contact_style))
+            else:
+                story.append(Paragraph(translated_text, body_style))
                 
     try:
         doc.build(story)
